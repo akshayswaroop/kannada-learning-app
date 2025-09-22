@@ -75,6 +75,20 @@ const RAW_CARDS = [
   { id: "tara", wordKannada: "ತಾರಾ", transliteration: "Tara", transliterationHi: "तारा" },
 ];
 
+// Minimal Kannada -> Devanagari mapping for common kernel letters.
+// This is a starting mapping; add more mappings if you want broader coverage.
+const KAN_TO_HI = {
+  'ಕ': 'क', 'ಖ': 'ख', 'ಗ': 'ग', 'ಘ': 'घ', 'ಙ': 'ङ',
+  'ಚ': 'च', 'ಛ': 'छ', 'ಜ': 'ज', 'ಝ': 'झ', 'ಞ': 'ञ',
+  'ಟ': 'ट', 'ಠ': 'ठ', 'ಡ': 'ड', 'ಢ': 'ढ', 'ಣ': 'ण',
+  'ತ': 'त', 'ಥ': 'थ', 'ದ': 'द', 'ಧ': 'ध', 'ನ': 'न',
+  'ಪ': 'प', 'ಫ': 'फ', 'ಬ': 'ब', 'ಭ': 'भ', 'ಮ': 'म',
+  'ಯ': 'य', 'ರ': 'र', 'ಲ': 'ल', 'ವ': 'व', 'ಶ': 'श',
+  'ಷ': 'ष', 'ಸ': 'स', 'ಹ': 'ह', 'ಳ': 'ळ', 'ಱ': 'ऱ',
+  'ಅ': 'अ', 'ಆ': 'आ', 'ಇ': 'इ', 'ಈ': 'ई', 'ಉ': 'उ', 'ಊ': 'ऊ',
+  'ಎ': 'ए', 'ಏ': 'ऐ', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं'
+};
+
 // keep a strict Kannada-only regex (Unicode block U+0C80 - U+0CFF)
 const KANNADA_RE = /[ಀ-೿]/u;
 function sanitizeKannada(s) {
@@ -136,6 +150,7 @@ function saveGlyphStats(profile, s) {
 
 export default function App() {
   const [profile, setProfile] = useState(PROFILES[0]);
+  const [mode, setMode] = useState("arrange"); // 'arrange' | 'mcq'
 
   // build sanitized deck on first render
   const [deck, setDeck] = useState(() => {
@@ -394,6 +409,13 @@ export default function App() {
                 ))}
               </select>
             </div>
+            <div>
+              <label style={{ marginRight: 8, color: "#6b7280", fontWeight: 700 }}>Mode:</label>
+              <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8 }}>
+                <option value="arrange">Arrange</option>
+                <option value="mcq">Multiple choice</option>
+              </select>
+            </div>
             <div style={{ background: "#f3f4f6", padding: "6px 10px", borderRadius: 8, fontWeight: 700 }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
           </div>
           <div style={{ color: "#6b7280" }}>Card {cardIndex + 1} / {deck.length}</div>
@@ -410,8 +432,9 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: "flex", gap: 18 }}>
-            <div style={{ flex: 1 }}>
+          {mode === "arrange" ? (
+            <div style={{ display: "flex", gap: 18 }}>
+              <div style={{ flex: 1 }}>
 
               {/* Tile pool */}
               <div style={{ marginBottom: 16 }}>
@@ -460,10 +483,10 @@ export default function App() {
                 {result === "correct" && <div style={{ marginLeft: 6, color: "#166534", fontWeight: 800 }}>✅ Correct</div>}
                 {result === "incorrect" && <div style={{ marginLeft: 6, color: "#b91c1c", fontWeight: 800 }}>❌ Incorrect — try again</div>}
               </div>
-            </div>
+              </div>
 
-            {/* Right panel */}
-            <aside style={{ width: 320 }}>
+              {/* Right panel */}
+              <aside style={{ width: 320 }}>
               <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
                 <h3 style={{ marginTop: 0 }}>Weak glyphs</h3>
                 <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy glyphs for {profile}</div>
@@ -491,9 +514,110 @@ export default function App() {
                 </div>
 
               </div>
-            </aside>
-          </div>
+              </aside>
+            </div>
+          ) : (
+            // MCQ mode: show Kannada glyph and multiple Hindi options
+            <div style={{ display: "flex", gap: 18 }}>
+              <div style={{ flex: 1 }}>
+                <MCQQuestion
+                  card={card}
+                  deck={deck}
+                  onAnswer={(isCorrect, glyph) => {
+                    // immediate scoring: tv minutes and glyph stats
+                    setTvMinutes((prev) => {
+                      const delta = isCorrect ? 1 : -1;
+                      const next = prev + delta;
+                      saveTvMinutes(profile, next);
+                      return next;
+                    });
+
+                    // update per-glyph stats for the Kannada glyph
+                    const updated = { ...glyphStats };
+                    const key = glyph;
+                    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
+                    stat.attempts = (stat.attempts || 0) + 1;
+                    if (isCorrect) stat.correct = (stat.correct || 0) + 1;
+                    updated[key] = stat;
+                    setGlyphStats(updated);
+                    saveGlyphStats(profile, updated);
+
+                    // advance to next card
+                    setCardIndex((ci) => (ci + 1) % deck.length);
+                  }}
+                />
+
+              </div>
+
+              {/* Right panel */}
+              <aside style={{ width: 320 }}>
+                <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
+                  <h3 style={{ marginTop: 0 }}>Weak glyphs</h3>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy glyphs for {profile}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {weakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — play a few rounds to collect data.</div>}
+                    {weakGlyphs.map((w) => (
+                      <div key={w.glyph} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                        <div style={{ fontSize: 28 }}>{w.glyph}</div>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </aside>
+            </div>
+          )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+
+function MCQQuestion({ card, deck, onAnswer }) {
+  // pick a single Kannada kernel glyph from the word that we can map to Devanagari
+  const codepoints = Array.from(card.wordKannada || "");
+  let kernel = null;
+  for (const cp of codepoints) {
+    if (KAN_TO_HI[cp]) {
+      kernel = cp;
+      break;
+    }
+  }
+
+  // if we found a kernel mapping, quiz that single glyph; otherwise fall back to whole-word transliteration
+  const correct = kernel ? KAN_TO_HI[kernel] : (card.transliterationHi || card.transliteration);
+
+  // build distractors: if kernel mode, use other mapped Devanagari letters; else use other card transliterations
+  let others = [];
+  if (kernel) {
+    others = Object.values(KAN_TO_HI).filter((v) => v !== correct);
+  } else {
+    others = deck.map((c) => c.transliterationHi || c.transliteration).filter((t) => t !== correct);
+  }
+
+  const opts = shuffleArray([correct, ...shuffleArray(others).slice(0, 3)]).slice(0, 4);
+  const [selected, setSelected] = useState(null);
+  const [locked, setLocked] = useState(false);
+
+  function choose(opt) {
+    if (locked) return;
+    setSelected(opt);
+    setLocked(true);
+    const isCorrect = opt === correct;
+    // return the Kannada glyph we quizzed (kernel or first codepoint fallback)
+    const returnedGlyph = kernel ? kernel : (Array.from(card.wordKannada || "")[0] || "");
+    setTimeout(() => onAnswer(isCorrect, returnedGlyph), 300);
+  }
+
+  return (
+    <div style={{ background: "white", padding: 20, borderRadius: 12, boxShadow: "0 12px 40px rgba(12,20,40,0.06)" }}>
+      <div style={{ fontSize: 48, fontWeight: 900, marginBottom: 18 }}>{kernel ? kernel : card.wordKannada}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+        {opts.map((o) => (
+          <button key={o} onClick={() => choose(o)} disabled={locked} style={{ padding: 14, borderRadius: 10, border: selected === o ? "2px solid #10b981" : "1px solid #e6e6e6", background: selected === o ? "#dcfce7" : "white", cursor: locked ? "not-allowed" : "pointer", fontSize: 18 }}>{o}</button>
+        ))}
       </div>
     </div>
   );
