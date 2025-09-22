@@ -589,15 +589,25 @@ function MCQQuestion({ card, deck, onAnswer }) {
   // if we found a kernel mapping, quiz that single glyph; otherwise fall back to whole-word transliteration
   const correct = kernel ? KAN_TO_HI[kernel] : (card.transliterationHi || card.transliteration);
 
-  // build distractors: if kernel mode, use other mapped Devanagari letters; else use other card transliterations
+  // build distractors: if kernel mode, use other mapped Devanagari letters (unique) and
+  // fall back to whole-word transliterations only if there aren't enough mapped letters.
   let others = [];
   if (kernel) {
-    others = Object.values(KAN_TO_HI).filter((v) => v !== correct);
+    // start from mapped single-letter values and ensure uniqueness
+    const mapped = Array.from(new Set(Object.values(KAN_TO_HI).filter((v) => v !== correct)));
+    others = mapped.slice();
+    // if we don't have enough single-letter distractors, add whole-word transliterations as fallback
+    if (others.length < 3) {
+      const fallback = deck.map((c) => c.transliterationHi || c.transliteration).filter((t) => t !== correct && !others.includes(t));
+      others = others.concat(fallback);
+    }
   } else {
     others = deck.map((c) => c.transliterationHi || c.transliteration).filter((t) => t !== correct);
   }
 
-  const opts = shuffleArray([correct, ...shuffleArray(others).slice(0, 3)]).slice(0, 4);
+  // ensure uniqueness and take up to 3 distractors
+  const distractors = shuffleArray(Array.from(new Set(others))).slice(0, 3);
+  const opts = shuffleArray([correct, ...distractors]).slice(0, 4);
   const [selected, setSelected] = useState(null);
   const [locked, setLocked] = useState(false);
 
