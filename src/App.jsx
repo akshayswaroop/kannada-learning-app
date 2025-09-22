@@ -1,3 +1,8 @@
+// Kannada Flashcards — first good version
+// - Gate hints until an attempt
+// - Single-step next-character hints (max 2 per word)
+// - Mark hinted glyphs as assisted in stats
+// - Live TV-minute incentive awarded/penalized on tile placement
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /*
