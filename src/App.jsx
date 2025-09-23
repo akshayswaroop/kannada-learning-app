@@ -4,7 +4,7 @@
 // - Mark hinted glyphs as assisted in stats
 // - Live TV-minute incentive awarded/penalized on tile placement
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS } from "./data";
+import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS, KAN_TO_HI as DATA_KAN_TO_HI, KAN_MATRAS, HI_TO_KAN, HI_MATRAS } from "./data";
 
 /*
   Full, self-contained App.jsx for the Kannada flashcards (Arrange mode).
@@ -19,36 +19,44 @@ import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS } from 
 
 // Use dataset from src/data.js (contains the expanded card list)
 
-// Minimal Kannada -> Devanagari mapping for common kernel letters.
-// This is a starting mapping; add more mappings if you want broader coverage.
-const KAN_TO_HI = {
-  'ಕ': 'क', 'ಖ': 'ख', 'ಗ': 'ग', 'ಘ': 'घ', 'ಙ': 'ङ',
-  'ಚ': 'च', 'ಛ': 'छ', 'ಜ': 'ज', 'ಝ': 'झ', 'ಞ': 'ञ',
-  'ಟ': 'ट', 'ಠ': 'ठ', 'ಡ': 'ड', 'ಢ': 'ढ', 'ಣ': 'ण',
-  'ತ': 'त', 'ಥ': 'थ', 'ದ': 'द', 'ಧ': 'ध', 'ನ': 'न',
-  'ಪ': 'प', 'ಫ': 'फ', 'ಬ': 'ब', 'ಭ': 'भ', 'ಮ': 'म',
-  'ಯ': 'य', 'ರ': 'र', 'ಲ': 'ल', 'ವ': 'व', 'ಶ': 'श',
-  'ಷ': 'ष', 'ಸ': 'स', 'ಹ': 'ह', 'ಳ': 'ळ', 'ಱ': 'ऱ',
-  'ಅ': 'अ', 'ಆ': 'आ', 'ಇ': 'इ', 'ಈ': 'ई', 'ಉ': 'उ', 'ಊ': 'ऊ',
-  // Note: Devanagari does not distinguish long/short e/o with separate letters; both map to ए/ओ
-  'ಎ': 'ए', 'ಏ': 'ए', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं', 'ಅಃ': 'ः',
-  // Additional vowels
-  'ಋ': 'ऋ', 'ೠ': 'ॠ', 'ಌ': 'ऌ', 'ೡ': 'ॡ',
-  // Kannada vowel signs -> Hindi matras
-  'ಾ': 'ा', 'ಿ': 'ि', 'ೀ': 'ी', 'ು': 'ु', 'ೂ': 'ू',
-  'ೃ': 'ृ', 'ೄ': 'ॄ', 'ೆ': 'े', 'ೇ': 'े', 'ೈ': 'ै',
-  'ೊ': 'ो', 'ೋ': 'ो', 'ೌ': 'ौ', 'ಂ': 'ं', 'ಃ': 'ः',
-  // Halant / Virama
-  '್': '्',
-  // Chandrabindu (nasalization mark)
-  'ಁ': 'ँ'
-};
+const KAN_TO_HI = { ...DATA_KAN_TO_HI, ...KAN_MATRAS };
+const HI_TO_KAN_ALL = { ...HI_TO_KAN, ...HI_MATRAS };
 
-// keep a strict Kannada-only regex (Unicode block U+0C80 - U+0CFF)
+// Regex helpers for script detection (allow zero-width joiner/non-joiner)
 const KANNADA_RE = /[ಀ-೿]/u;
-function sanitizeKannada(s) {
+const DEVANAGARI_RE = /[ऀ-ॿ]/u;
+const ALLOWED_JOINERS = new Set(['\u200d', '\u200c']);
+
+function sanitizeByScript(s, tester) {
   if (!s) return "";
-  return Array.from(s).filter((ch) => KANNADA_RE.test(ch) || ch === " ").join("");
+  return Array.from(s).filter((ch) => tester.test(ch) || ch === " " || ALLOWED_JOINERS.has(ch)).join("");
+}
+function sanitizeKannada(s) {
+  return sanitizeByScript(s, KANNADA_RE);
+}
+function sanitizeHindi(s) {
+  return sanitizeByScript(s, DEVANAGARI_RE);
+}
+
+function cardSupportsDirection(card, direction) {
+  if (!card) return false;
+  if (direction === 'hi-to-kn') {
+    return Boolean((card.wordKannada || '').length && ((card.transliterationHi && card.transliterationHi.length) || (card.transliteration && card.transliteration.length)));
+  }
+  if (direction === 'kn-to-hi') {
+    return Boolean((card.wordHindi || '').length && (card.wordKannada || '').length);
+  }
+  return false;
+}
+
+function findNextSupportedIndex(deck, startIndex, direction) {
+  if (!deck.length) return 0;
+  const len = deck.length;
+  for (let step = 1; step <= len; step++) {
+    const idx = (startIndex + step) % len;
+    if (cardSupportsDirection(deck[idx], direction)) return idx;
+  }
+  return startIndex;
 }
 
 function paletteFor(n) {
@@ -57,10 +65,26 @@ function paletteFor(n) {
 }
 
 // Kannada independent vowels and vowel signs (treated as vowel category for cues)
-const INDEPENDENT_VOWELS = new Set(['ಅ','ಆ','ಇ','ಈ','ಉ','ಊ','ಋ','ೠ','ಎ','ಏ','ಐ','ಒ','ಓ','ಔ']);
-const VOWEL_SIGNS = new Set(['ಾ','ಿ','ೀ','ು','ೂ','ೃ','ೄ','ೆ','ೇ','ೈ','ೊ','ೋ','ೌ','ಂ','ಃ']);
-function isVowelGlyph(ch) {
-  return INDEPENDENT_VOWELS.has(ch) || VOWEL_SIGNS.has(ch);
+const INDEPENDENT_VOWELS_KN = new Set(['ಅ','ಆ','ಇ','ಈ','ಉ','ಊ','ಋ','ೠ','ಎ','ಏ','ಐ','ಒ','ಓ','ಔ','ಅಂ','ಅಃ','ಁ']);
+const VOWEL_SIGNS_KN = new Set(['ಾ','ಿ','ೀ','ು','ೂ','ೃ','ೄ','ೆ','ೇ','ೈ','ೊ','ೋ','ೌ','ಂ','ಃ','ಁ']);
+const INDEPENDENT_VOWELS_HI = new Set(
+  Object.entries(HI_TO_KAN).
+    filter(([, kn]) => INDEPENDENT_VOWELS_KN.has(kn)).
+    map(([hi]) => hi)
+);
+const VOWEL_SIGNS_HI = new Set(Object.keys(HI_MATRAS));
+
+function scriptForGlyph(ch) {
+  if (KANNADA_RE.test(ch)) return 'kn';
+  if (DEVANAGARI_RE.test(ch)) return 'hi';
+  return 'other';
+}
+
+function isVowelGlyph(ch, scriptHint = null) {
+  const script = scriptHint || scriptForGlyph(ch);
+  if (script === 'kn') return INDEPENDENT_VOWELS_KN.has(ch) || VOWEL_SIGNS_KN.has(ch);
+  if (script === 'hi') return INDEPENDENT_VOWELS_HI.has(ch) || VOWEL_SIGNS_HI.has(ch);
+  return false;
 }
 
 // Gentle hue cues: consonants vs vowels; tuned for light/dark
@@ -92,22 +116,54 @@ const KAN_TO_ROMAN = {
   '್':'halant'
 };
 function romanFor(g) { return KAN_TO_ROMAN[g] || ''; }
-function formatGlyphName(g) {
-  // Friendly labels for signs that don't render well in isolation
-  if (VOWEL_SIGNS.has(g)) {
-    const r = KAN_TO_ROMAN[g] || '';
-    const h = KAN_TO_HI[g] || '';
-    return `vowel sign ${g}${r || h ? ` (${r}${r && h ? ' / ' : ''}${h || ''})` : ''}`;
+
+function romanForAny(g) {
+  const script = scriptForGlyph(g);
+  if (script === 'kn') return romanFor(g);
+  if (script === 'hi') {
+    const kn = HI_TO_KAN_ALL[g];
+    return kn ? romanFor(kn) : '';
   }
-  if (g === '್') return 'halant (्)';
-  if (g === 'ಂ') return 'anusvara (ं)';
-  if (g === 'ಃ') return 'visarga (ः)';
-  if (g === 'ಁ') return 'chandrabindu (ँ)';
-  const r = romanFor(g);
-  const h = KAN_TO_HI[g];
-  if (r && h) return `${g} (${r} / ${h})`;
-  if (r) return `${g} (${r})`;
-  if (h) return `${g} (${h})`;
+  return '';
+}
+
+function counterpartForGlyph(g) {
+  const script = scriptForGlyph(g);
+  if (script === 'kn') return KAN_TO_HI[g] || '';
+  if (script === 'hi') return HI_TO_KAN_ALL[g] || '';
+  return '';
+}
+
+function formatGlyphName(g) {
+  const script = scriptForGlyph(g);
+  const roman = romanForAny(g);
+  const counterpart = counterpartForGlyph(g);
+  if (script === 'kn') {
+    if (VOWEL_SIGNS_KN.has(g)) {
+      return `vowel sign ${g}${roman || counterpart ? ` (${roman}${roman && counterpart ? ' / ' : ''}${counterpart || ''})` : ''}`;
+    }
+    if (g === '್') return `halant (${counterpart || '्'})`;
+    if (g === 'ಂ') return `anusvara (${counterpart || 'ं'})`;
+    if (g === 'ಃ') return `visarga (${counterpart || 'ः'})`;
+    if (g === 'ಁ') return `chandrabindu (${counterpart || 'ँ'})`;
+    if (roman && counterpart) return `${g} (${roman} / ${counterpart})`;
+    if (roman) return `${g} (${roman})`;
+    if (counterpart) return `${g} (${counterpart})`;
+    return g;
+  }
+  if (script === 'hi') {
+    if (VOWEL_SIGNS_HI.has(g)) {
+      return `matra ${g}${roman || counterpart ? ` (${roman}${roman && counterpart ? ' / ' : ''}${counterpart || ''})` : ''}`;
+    }
+    if (g === '्') return `halant (${counterpart || '್'})`;
+    if (g === 'ं') return `anusvara (${counterpart || 'ಂ'})`;
+    if (g === 'ः') return `visarga (${counterpart || 'ಃ'})`;
+    if (g === 'ँ') return `chandrabindu (${counterpart || 'ಁ'})`;
+    if (roman && counterpart) return `${g} (${roman} / ${counterpart})`;
+    if (roman) return `${g} (${roman})`;
+    if (counterpart) return `${g} (${counterpart})`;
+    return g;
+  }
   return g;
 }
 
@@ -204,6 +260,24 @@ function saveGlyphStats(profile, s) {
   } catch (e) {}
 }
 
+const HINDI_STATS_BASE_KEY = `${BASE_STATS_KEY}_hi_v1`;
+function hiStatsKeyFor(profile) {
+  return `${HINDI_STATS_BASE_KEY}::${profile}`;
+}
+function loadHiStats(profile) {
+  try {
+    const raw = localStorage.getItem(hiStatsKeyFor(profile));
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveHiStats(profile, s) {
+  try {
+    localStorage.setItem(hiStatsKeyFor(profile), JSON.stringify(s));
+  } catch (e) {}
+}
+
 // Math mode stats (per multiplication fact)
 const MATH_STATS_BASE_KEY = `${BASE_STATS_KEY}_math_v1`;
 function mathStatsKeyFor(profile) {
@@ -283,14 +357,50 @@ export default function App() {
 
   // build sanitized deck on first render
   const [deck, setDeck] = useState(() => {
-    const sanitized = RAW_CARDS.map((card) => ({ ...card, wordKannada: sanitizeKannada(card.wordKannada) }));
+    const sanitized = RAW_CARDS.map((card) => ({
+      ...card,
+      wordKannada: sanitizeKannada(card.wordKannada),
+      wordHindi: sanitizeHindi(card.transliterationHi || ""),
+    }));
     return randomize ? shuffleArray(sanitized) : sanitized;
   });
 
   const [cardIndex, setCardIndex] = useState(0);
+  const [direction, setDirection] = useState('hi-to-kn'); // hi-to-kn | kn-to-hi
+  const DIRECTION_OPTIONS = {
+    'hi-to-kn': { value: 'hi-to-kn', label: 'Hindi → Kannada', promptLabel: 'Hindi', targetLabel: 'Kannada' },
+    'kn-to-hi': { value: 'kn-to-hi', label: 'Kannada → Hindi', promptLabel: 'Kannada', targetLabel: 'Hindi' },
+  };
+  const directionMeta = DIRECTION_OPTIONS[direction] || DIRECTION_OPTIONS['hi-to-kn'];
   const card = useMemo(() => deck[cardIndex] || deck[0] || RAW_CARDS[0], [deck, cardIndex]);
 
-  const clusters = useMemo(() => Array.from(card.wordKannada || ""), [card]);
+  useEffect(() => {
+    if (!deck.length) return;
+    if (cardSupportsDirection(card, direction)) return;
+    const nextIdx = deck.findIndex((entry) => cardSupportsDirection(entry, direction));
+    if (nextIdx !== -1 && nextIdx !== cardIndex) {
+      setCardIndex(nextIdx);
+    }
+  }, [card, deck, direction, cardIndex]);
+
+  const targetScript = direction === 'hi-to-kn' ? 'kn' : 'hi';
+  const promptScript = direction === 'hi-to-kn' ? 'hi' : 'kn';
+  const promptWord = useMemo(() => {
+    if (!card) return '';
+    if (direction === 'hi-to-kn') {
+      if (card.wordHindi && card.wordHindi.length) return card.wordHindi;
+      const sanitizedHi = sanitizeHindi(card.transliterationHi || '');
+      if (sanitizedHi.length) return sanitizedHi;
+      return card.transliterationHi || card.transliteration || '';
+    }
+    return card.wordKannada || '';
+  }, [card, direction]);
+  const targetWord = useMemo(() => {
+    if (!card) return '';
+    return direction === 'hi-to-kn' ? (card.wordKannada || '') : (card.wordHindi || '');
+  }, [card, direction]);
+
+  const clusters = useMemo(() => Array.from(targetWord || ""), [targetWord]);
   const colors = useMemo(() => paletteFor(clusters.length), [clusters.length]);
   // Build a stable color map per-card so the same glyph keeps the same color
   const glyphColorMap = useMemo(() => {
@@ -302,10 +412,10 @@ export default function App() {
     let ci = 0;
     for (const g of clusters) {
       if (map[g]) continue;
-      if (isVowelGlyph(g) && vowelArr.length) {
+      if (isVowelGlyph(g, targetScript) && vowelArr.length) {
         map[g] = vowelArr[vi % vowelArr.length];
         vi++;
-      } else if (!isVowelGlyph(g) && consArr.length) {
+      } else if (!isVowelGlyph(g, targetScript) && consArr.length) {
         map[g] = consArr[ci % consArr.length];
         ci++;
       } else {
@@ -315,7 +425,7 @@ export default function App() {
       }
     }
     return map;
-  }, [clusters, theme, colors]);
+  }, [clusters, theme, colors, targetScript]);
 
   function tileColorFor(glyph, idx) {
     return glyphColorMap[glyph] || colors[idx % colors.length];
@@ -327,10 +437,11 @@ export default function App() {
   const [hasAttempted, setHasAttempted] = useState(false);
   const [result, setResult] = useState(null);
   const [lastCorrectWord, setLastCorrectWord] = useState(null);
-  const [showKannadaAnswer, setShowKannadaAnswer] = useState(false);
+  const [showTargetAnswer, setShowTargetAnswer] = useState(false);
   const [microFeedback, setMicroFeedback] = useState(null);
 
-  const [glyphStats, setGlyphStats] = useState(() => loadGlyphStats(PROFILES[0]));
+  const [glyphStatsKn, setGlyphStatsKn] = useState(() => loadGlyphStats(PROFILES[0]));
+  const [glyphStatsHi, setGlyphStatsHi] = useState(() => loadHiStats(PROFILES[0]));
   const [mathStats, setMathStats] = useState(() => loadMathStats(PROFILES[0]));
   const [engStats, setEngStats] = useState(() => loadEngStats(PROFILES[0]));
   const [tvMinutes, setTvMinutes] = useState(() => loadTvMinutes(PROFILES[0]));
@@ -362,7 +473,8 @@ export default function App() {
   // hints removed
 
   useEffect(() => {
-    setGlyphStats(loadGlyphStats(profile));
+    setGlyphStatsKn(loadGlyphStats(profile));
+    setGlyphStatsHi(loadHiStats(profile));
     setMathStats(loadMathStats(profile));
     setEngStats(loadEngStats(profile));
     setTvMinutes(loadTvMinutes(profile));
@@ -370,7 +482,11 @@ export default function App() {
 
   // no toggle: randomize is true by default — build deck once on mount
   useEffect(() => {
-    const sanitized = RAW_CARDS.map((card) => ({ ...card, wordKannada: sanitizeKannada(card.wordKannada) }));
+    const sanitized = RAW_CARDS.map((card) => ({
+      ...card,
+      wordKannada: sanitizeKannada(card.wordKannada),
+      wordHindi: sanitizeHindi(card.transliterationHi || ""),
+    }));
     setDeck(shuffleArray(sanitized));
     setCardIndex(0);
   }, []);
@@ -393,7 +509,7 @@ export default function App() {
     };
   }, []);
 
-  // prepare tiles & slots whenever card changes
+  // prepare tiles & slots whenever target word changes
   useEffect(() => {
     const base = clusters.map((g, i) => ({ g, idx: i, c: tileColorFor(g, i) }));
     let shuf = shuffleArray(base);
@@ -409,9 +525,9 @@ export default function App() {
     setTvMinutesLock(new Set());
     setResult(null);
     setLastCorrectWord(null);
-    setShowKannadaAnswer(false);
+    setShowTargetAnswer(false);
     setMicroFeedback(null);
-  }, [cardIndex, card.wordKannada]);
+  }, [cardIndex, targetWord, direction]);
 
   // drag handlers
   function onDragStart(e, tileIndex) {
@@ -444,7 +560,7 @@ export default function App() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(slotIndex)) return prev; // already scored
       const correctGlyph = clusters[slotIndex];
-      const delta = tile.g === correctGlyph ? 1 : -3; // +1 for correct, -3 for incorrect
+      const delta = tile.g === correctGlyph ? 1 : -5;
       const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, slotIndex]));
@@ -471,7 +587,7 @@ export default function App() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(placedIdx)) return prev;
       const correctGlyph = clusters[placedIdx];
-      const delta = tile.g === correctGlyph ? 1 : -3; // +1 correct, -3 incorrect
+      const delta = tile.g === correctGlyph ? 1 : -5;
       const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, placedIdx]));
@@ -495,7 +611,9 @@ export default function App() {
     const expected = clusters.join("");
 
     // update glyph stats for this profile
-    const updated = { ...glyphStats };
+    const isKannadaTarget = targetScript === 'kn';
+    const baseStats = isKannadaTarget ? glyphStatsKn : glyphStatsHi;
+    const updated = { ...baseStats };
     for (let i = 0; i < clusters.length; i++) {
       const key = clusters[i];
       const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
@@ -504,14 +622,24 @@ export default function App() {
       if (placed === key) stat.correct = (stat.correct || 0) + 1;
       updated[key] = stat;
     }
-    setGlyphStats(updated);
-    saveGlyphStats(profile, updated);
+    if (isKannadaTarget) {
+      setGlyphStatsKn(updated);
+      saveGlyphStats(profile, updated);
+    } else {
+      setGlyphStatsHi(updated);
+      saveHiStats(profile, updated);
+    }
 
     // hints removed
     const ok = assembled === expected;
     setResult(ok ? "correct" : "incorrect");
     setLastCorrectWord(ok ? null : expected);
     if (!ok) {
+      setTvMinutes((prev) => {
+        const next = Math.max(0, prev - 2);
+        saveTvMinutes(profile, next);
+        return next;
+      });
       let wrongIdx = null;
       for (let i = 0; i < clusters.length; i++) {
         const placed = slots[i] ? slots[i].g : "";
@@ -536,12 +664,16 @@ export default function App() {
   }
 
   function handleNext() {
-    setCardIndex((ci) => (ci + 1) % deck.length);
+    setCardIndex((ci) => findNextSupportedIndex(deck, ci, direction));
   }
 
   function handleReshuffle() {
     // re-sanitize & reshuffle
-    const sanitized = RAW_CARDS.map((card) => ({ ...card, wordKannada: sanitizeKannada(card.wordKannada) }));
+    const sanitized = RAW_CARDS.map((card) => ({
+      ...card,
+      wordKannada: sanitizeKannada(card.wordKannada),
+      wordHindi: sanitizeHindi(card.transliterationHi || ""),
+    }));
     setDeck(shuffleArray(sanitized));
     setCardIndex(0);
     setHasAttempted(false);
@@ -549,13 +681,17 @@ export default function App() {
 
 // hints removed
 
-  const weakGlyphs = useMemo(() => {
-    return Object.entries(glyphStats)
+  function computeWeakGlyphs(stats) {
+    return Object.entries(stats)
       .map(([g, s]) => ({ glyph: g, attempts: s.attempts || 0, correct: s.correct || 0, accuracy: s.attempts ? (s.correct || 0) / s.attempts : 1 }))
       .filter((x) => x.attempts > 0)
       .sort((a, b) => a.accuracy - b.accuracy)
       .slice(0, 12);
-  }, [glyphStats]);
+  }
+
+  const weakGlyphsKn = useMemo(() => computeWeakGlyphs(glyphStatsKn), [glyphStatsKn]);
+  const weakGlyphsHi = useMemo(() => computeWeakGlyphs(glyphStatsHi), [glyphStatsHi]);
+  const activeWeakGlyphs = targetScript === 'kn' ? weakGlyphsKn : weakGlyphsHi;
 
 function glyphColorFor(accuracy, themeMode = 'light') {
   if (themeMode === 'dark') {
@@ -783,8 +919,8 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
   }
 
   const [mathQ, setMathQ] = useState(() => pickNextMath(loadMathStats(PROFILES[0]) || {}, null));
-  const [bonusReward, setBonusReward] = useState(20);
-  const [bonusPenalty, setBonusPenalty] = useState(20);
+  const [bonusReward, setBonusReward] = useState(1);
+  const [bonusPenalty, setBonusPenalty] = useState(5);
   const [bonusFrequency, setBonusFrequency] = useState(0.15); // 0..1
   const [answer, setAnswer] = useState("");
   const answerRef = useRef(null);
@@ -855,7 +991,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
 
     // scoring: normal +2/-10, bonus adjustable
     setTvMinutes((prev) => {
-      const delta = mathQ.bonus ? (isCorrect ? bonusReward : -bonusPenalty) : (isCorrect ? 2 : -10);
+    const delta = isCorrect ? 1 : -5;
       const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       return next;
@@ -877,7 +1013,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     saveMathStats(profile, updated);
 
     setTvMinutes((prev) => {
-      const delta = mathQ.bonus ? -bonusPenalty : -10;
+    const delta = -5;
       const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       return next;
@@ -970,7 +1106,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     saveEngStats(profile, updated);
     // scoring: reward reading, small penalty otherwise
     setTvMinutes((prev) => {
-      const delta = correct ? 2 : -1;
+      const delta = correct ? 1 : -5;
       const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       return next;
@@ -1080,6 +1216,46 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                 <option value="english">English</option>
               </select>
             </div>
+            {mode === 'kannada' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
+                <span style={{ color: themeColors.textMuted, fontWeight: 700 }}>Direction:</span>
+                <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                  {Object.values(DIRECTION_OPTIONS).map((opt) => {
+                    const isActive = direction === opt.value;
+                    const bg = isActive ? choose('#bbf7d0', 'rgba(16,185,129,0.24)') : themeColors.control;
+                    const textColor = isActive ? choose('#064e3b', '#bbf7d0') : themeColors.textPrimary;
+                    const borderColor = isActive ? choose('#0f9f7a', 'rgba(34,197,94,0.55)') : themeColors.border;
+                    return (
+                      <button
+                        key={opt.value}
+                        onClick={() => {
+                          if (direction === opt.value) return;
+                          setDirection(opt.value);
+                          setResult(null);
+                          setCardIndex((idx) => cardSupportsDirection(deck[idx], opt.value) ? idx : findNextSupportedIndex(deck, idx, opt.value));
+                        }}
+                        style={{
+                          padding: '8px 18px',
+                          borderRadius: 9999,
+                          border: `1px solid ${borderColor}`,
+                          background: bg,
+                          color: textColor,
+                          cursor: 'pointer',
+                          fontWeight: isActive ? 800 : 600,
+                          letterSpacing: 0.2,
+                          minWidth: 150,
+                          textAlign: 'center',
+                          transition: 'background 0.2s ease, color 0.2s ease, border 0.2s ease',
+                          boxShadow: isActive ? choose('0 0 0 3px rgba(16,185,129,0.15)', '0 0 0 2px rgba(16,185,129,0.4)') : '0 0 0 1px rgba(15,23,42,0.2)',
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {/* Arrange-only: mode and randomize are fixed (random by default) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ background: themeColors.surfaceSubtle, padding: "6px 10px", borderRadius: 8, fontWeight: 700, color: themeColors.textPrimary }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
@@ -1102,20 +1278,22 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
           {mode === 'kannada' ? (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ fontSize: 34, fontWeight: 900 }}>{card.transliterationHi || card.transliteration}</div>
+              <div style={{ fontSize: 34, fontWeight: 900 }}>{promptWord || (direction === 'hi-to-kn' ? (card.transliterationHi || card.transliteration || '') : card.wordKannada || '')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: themeColors.textMuted }}>
                 <span role="img" aria-label="switch languages">🔁</span>
-                <span>Make this word in Kannada</span>
-                {showKannadaAnswer && (
+                <span>Arrange this word in {directionMeta.targetLabel}</span>
+                {showTargetAnswer && (
                   <div style={{ textAlign: 'center', marginTop: 4, fontSize: 40, fontWeight: 900, letterSpacing: 1, color: themeColors.textPrimary }}>
-                    {clusters.join("")}
+                    {targetWord}
                   </div>
                 )}
               </div>
             </div>
             <div style={{ textAlign: "right", display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-              <div style={{ fontSize: 13, color: themeColors.textMuted }}>Arrange the word for</div>
-              <div style={{ fontSize: 18, fontWeight: 700 }}>{card.transliterationHi ? "" : card.transliteration}</div>
+              <div style={{ fontSize: 13, color: themeColors.textMuted }}>{directionMeta.promptLabel} → {directionMeta.targetLabel}</div>
+              {card.transliteration && (
+                <div style={{ fontSize: 16, fontWeight: 600, color: themeColors.textMuted }}>{card.transliteration}</div>
+              )}
               <div style={{ fontWeight: 800, fontSize: 16, display: 'inline-flex', alignItems: 'center', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
             </div>
           </div>
@@ -1197,7 +1375,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
 
                 {result === 'incorrect' && microFeedback && (
                   <div style={{ padding: '10px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.2)'), color: themeColors.textPrimary, borderRadius: 10, fontWeight: 800 }}>
-                    The next letter is {microFeedback}. Try again!
+                    The next glyph is {microFeedback}. Try again!
                   </div>
                 )}
 
@@ -1206,6 +1384,11 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                 {result === "incorrect" && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 12, background: choose('#fee2e2', 'rgba(248,113,113,0.2)'), color: choose('#991b1b', '#fecaca'), fontWeight: 900, fontSize: 18 }}>
                     {timedOut ? '⏰ Time up' : '❌ Not correct'}
+                    {!showTargetAnswer && (
+                      <button type="button" onClick={() => setShowTargetAnswer(true)} style={{ marginLeft: 6, padding: '8px 12px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 800, background: choose('#fde68a', 'rgba(234,179,8,0.25)'), color: themeColors.textPrimary }}>
+                        Show {directionMeta.targetLabel}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -1256,19 +1439,23 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
               <div style={{ padding: 14, borderRadius: 12, background: themeColors.surface, boxShadow: themeColors.softShadow, border: `1px solid ${themeColors.softBorder}`, transition: "background 0.3s ease" }}>
                 {mode === 'kannada' ? (
                   <>
-                  <h3 style={{ marginTop: 0 }}>Practice buddies</h3>
-                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>These letters are learning with you, {profile}! Keep going.</div>
+                  <h3 style={{ marginTop: 0 }}>Practice buddies ({directionMeta.targetLabel})</h3>
+                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>These {directionMeta.targetLabel.toLowerCase()} characters are learning with you, {profile}! Keep going.</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>Keep playing! We’ll track tricky letters for you.</div>}
-                    {weakGlyphs.map((w) => (
-                      <div key={w.glyph} style={{ padding: 10, borderRadius: 12, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, lineHeight: 1 }}>
-                          <div style={{ fontSize: 30 }}>{w.glyph}</div>
-                          {KAN_TO_HI[w.glyph] && <div style={{ fontSize: 18, fontWeight: 800 }}>{KAN_TO_HI[w.glyph]}</div>}
-                          {KAN_TO_ROMAN[w.glyph] && <div style={{ fontSize: 12, fontWeight: 800, color: themeColors.textMuted, marginTop: 2 }}>{KAN_TO_ROMAN[w.glyph]}</div>}
+                    {activeWeakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>Keep playing! We’ll track tricky letters for you.</div>}
+                    {activeWeakGlyphs.map((w) => {
+                      const counterpart = counterpartForGlyph(w.glyph);
+                      const roman = romanForAny(w.glyph);
+                      return (
+                        <div key={`${direction}-${w.glyph}`} style={{ padding: 12, borderRadius: 12, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, lineHeight: 1 }}>
+                            <div style={{ fontSize: 32, fontWeight: 800 }}>{w.glyph}</div>
+                            {counterpart && <div style={{ fontSize: 18, fontWeight: 700 }}>{counterpart}</div>}
+                            {roman && <div style={{ fontSize: 12, fontWeight: 700, color: themeColors.textMuted }}>{roman}</div>}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   </>

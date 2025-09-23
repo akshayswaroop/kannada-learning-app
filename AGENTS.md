@@ -10,17 +10,18 @@ This guide primes GitHub Copilot, ChatGPT Codex, and similar automation agents b
 - **Persistent state:** Browser `localStorage` stores per-profile glyph/math/English stats and TV-minute allowances.
 - **Theme:** Light/dark toggle stored in `localStorage` under `kannada_app_theme`.
 - **Timers:** Unified 120s timer for Kannada, Math, and English modes.
+- **Direction toggle:** Within Kannada mode, a Hindi→Kannada / Kannada→Hindi switch reuses the shared transliteration dataset.
 
 ## How the app behaves
 1. **Learner profiles:** Dropdown of names from `PROFILES`. Switching profiles reloads stats and TV minutes from storage; always persist the old profile before swapping.
-2. **Modes:** `kannada` (arrange tiles), `math` (timed equation drill), `english` (sight-word read/not read). Mode select triggers mode-specific UI while preserving core layout.
+2. **Modes:** `kannada` (arrange tiles with direction toggle), `math`, `english`. Mode select triggers mode-specific UI while preserving core layout.
 3. **Timers:** Single, consistent 120s timer in all modes. Expiry triggers the existing timeout handlers (`handleKannadaTimeout`, `handleMathTimeout`, `handleEnglishTimeout`) and counts as incorrect per-mode scoring.
 4. **Scoring:**
    - Kannada: each slot scored once per card; correct placement `+1`, incorrect `-3`, minimum `0` minutes.
    - Math: baseline `+2/-10`, bonus problems use adjustable reward/penalty (default `+20/-20`). Timeouts count as incorrect and deduct minutes.
    - English: `+2` if read, `-1` otherwise. Timer expiry also penalises.
    Store results with `saveTvMinutes(profile, value)` before returning.
-4. **Weakness tracking:** Glyphs, math facts, and English words serialize JSON stats with `{ attempts, correct }` and feed the “Practice buddies/Weak …” panels. Update attempts for every submission; only increment `correct` when unassisted success occurs. Kannada panel shows encouraging copy and, for each glyph, its Hindi equivalent (including matras) and romanized sound.
+4. **Weakness tracking:** Glyphs, math facts, and English words serialize JSON stats with `{ attempts, correct }` and feed the “Practice buddies/Weak …” panels. Update attempts for every submission; only increment `correct` when unassisted success occurs. The buddies panel swaps languages based on direction and shows counterpart script + romanisation (including matras/halant).
 5. **Randomness:**
    - Deck shuffles ensure tiles never start ordered (`shuffleArray` loop).
    - Math questions pull from weighted pools via `pickNextMath`; avoid repeating the last fact.
@@ -39,13 +40,13 @@ This guide primes GitHub Copilot, ChatGPT Codex, and similar automation agents b
 - Enter-key shortcuts and the drag/tap interactions for Kannada tiles.
 - The light/dark theme toggle (persisted via `THEME_STORAGE_KEY`) and shared color tokens; keep contrast acceptable in both modes.
 - Mode timers: unified 120s timer and the timeout handlers (`handleKannadaTimeout`, `handleMathTimeout`, `handleEnglishTimeout`).
-- Sanitization that strips non-Kannada glyphs while leaving spaces (see `sanitizeKannada`).
+- Script sanitization helpers (`sanitizeKannada`, `sanitizeHindi`) must keep only valid glyphs plus joiners/spaces.
 
 ## Recent UX changes agents should preserve
 - Kannada tile colors are consistent per unique glyph within a card; palette varies by vowel/consonant and theme.
-- The right-panel “Weak glyphs” is now titled “Practice buddies” with encouraging copy. Tiles show Kannada + Hindi equivalent (including matras) + romanized sound. Percent/attempt text removed to keep tiles clean.
-- Incorrect submissions show a micro-feedback chip like: “This is ನ (na / न). Try again!” including Hindi and romanization for glyphs and matras (halant labeled as “halant / ्”).
-- Child-facing controls trimmed to only Submit + Hint. Resets/shuffles moved into the passcode-gated Parent modal under “Advanced controls”.
+- Practice buddies panel adapts to the active direction, showing counterpart script + romanization for both Kannada and Hindi glyphs (including matras). Percent/attempt text removed to keep tiles clean.
+- Incorrect submissions show a micro-feedback chip like: “The next glyph is ನ (na / न). Try again!” including Hindi or Kannada partners plus romanization (halant, matras, chandrabindu handled explicitly).
+- Child-facing controls keep only a bold Submit button and progress chip; resets/shuffles remain gated inside the Parent modal.
 
 ## Helpful references
 - `README.md` — quick run instructions.

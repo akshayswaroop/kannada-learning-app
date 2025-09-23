@@ -1,5 +1,5 @@
 // Data module for Kannada Flashcards
-// Exports: RAW_CARDS, KAN_TO_HI, KAN_MATRAS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY
+// Exports: RAW_CARDS, KAN_TO_HI, KAN_MATRAS, HI_TO_KAN, HI_MATRAS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY
 
 export const BASE_STATS_KEY = "kannada_glyph_stats_v1";
 export const TV_BASE_KEY = "kannada_tv_minutes_v1";
@@ -192,8 +192,8 @@ export const KAN_TO_HI = {
   'ಯ': 'य', 'ರ': 'र', 'ಲ': 'ल', 'ವ': 'व', 'ಶ': 'श',
   'ಷ': 'ष', 'ಸ': 'स', 'ಹ': 'ह', 'ಳ': 'ळ', 'ಱ': 'ऱ',
   'ಅ': 'अ', 'ಆ': 'आ', 'ಇ': 'इ', 'ಈ': 'ई', 'ಉ': 'उ', 'ಊ': 'ऊ',
-  'ಎ': 'ए', 'ಏ': 'ऐ', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं',
-  'ಋ': 'ऋ', 'ೠ': 'ॠ', 'ಌ': 'ऌ', 'ೡ': 'ॡ', 'ಅಃ': 'ः'
+  'ಎ': 'ए', 'ಏ': 'ए', 'ಐ': 'ऐ', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं', 'ಅಃ': 'ः',
+  'ಋ': 'ऋ', 'ೠ': 'ॠ', 'ಌ': 'ऌ', 'ೡ': 'ॡ', 'ಁ': 'ँ'
 };
 
 export const KAN_MATRAS = {
@@ -205,11 +205,24 @@ export const KAN_MATRAS = {
   'ೃ': 'ृ', // r̥
   'ೄ': 'ॄ', // r̥̄
   'ೆ': 'े', // e
-  'ೇ': 'ै', // long e / ai marker (note: Kannada has separate signs for e/ai placement)
+  'ೇ': 'े', // long e (Hindi matra is shared)
   'ೈ': 'ै', // ai
   'ೊ': 'ो', // o
   'ೋ': 'ो', // long o
   'ೌ': 'ौ', // au (combined sign)
   'ಂ': 'ं', // anusvara
-  'ಃ': 'ः'  // visarga
+  'ಃ': 'ः',  // visarga
+  'ಁ': 'ँ'   // chandrabindu / anunasika
 };
+
+export const HI_TO_KAN = Object.entries(KAN_TO_HI).reduce((acc, [kn, hi]) => {
+  if (!hi || acc[hi]) return acc;
+  acc[hi] = kn;
+  return acc;
+}, {});
+
+export const HI_MATRAS = Object.entries(KAN_MATRAS).reduce((acc, [kn, hi]) => {
+  if (!hi || acc[hi]) return acc;
+  acc[hi] = kn;
+  return acc;
+}, {});
