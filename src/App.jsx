@@ -30,7 +30,18 @@ const KAN_TO_HI = {
   'ಯ': 'य', 'ರ': 'र', 'ಲ': 'ल', 'ವ': 'व', 'ಶ': 'श',
   'ಷ': 'ष', 'ಸ': 'स', 'ಹ': 'ह', 'ಳ': 'ळ', 'ಱ': 'ऱ',
   'ಅ': 'अ', 'ಆ': 'आ', 'ಇ': 'इ', 'ಈ': 'ई', 'ಉ': 'उ', 'ಊ': 'ऊ',
-  'ಎ': 'ए', 'ಏ': 'ऐ', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं'
+  // Note: Devanagari does not distinguish long/short e/o with separate letters; both map to ए/ओ
+  'ಎ': 'ए', 'ಏ': 'ए', 'ಒ': 'ओ', 'ಓ': 'ओ', 'ಔ': 'औ', 'ಅಂ': 'ं', 'ಅಃ': 'ः',
+  // Additional vowels
+  'ಋ': 'ऋ', 'ೠ': 'ॠ', 'ಌ': 'ऌ', 'ೡ': 'ॡ',
+  // Kannada vowel signs -> Hindi matras
+  'ಾ': 'ा', 'ಿ': 'ि', 'ೀ': 'ी', 'ು': 'ु', 'ೂ': 'ू',
+  'ೃ': 'ृ', 'ೄ': 'ॄ', 'ೆ': 'े', 'ೇ': 'े', 'ೈ': 'ै',
+  'ೊ': 'ो', 'ೋ': 'ो', 'ೌ': 'ौ', 'ಂ': 'ं', 'ಃ': 'ः',
+  // Halant / Virama
+  '್': '्',
+  // Chandrabindu (nasalization mark)
+  'ಁ': 'ँ'
 };
 
 // keep a strict Kannada-only regex (Unicode block U+0C80 - U+0CFF)
@@ -44,6 +55,107 @@ function paletteFor(n) {
   const palette = ["#FFB4C6", "#FFD6A5", "#FDFFB6", "#CAFFBF", "#9BF6FF", "#BDB2FF", "#C8A2FF", "#FFC6FF"];
   return Array.from({ length: n }).map((_, i) => palette[i % palette.length]);
 }
+
+// Kannada independent vowels and vowel signs (treated as vowel category for cues)
+const INDEPENDENT_VOWELS = new Set(['ಅ','ಆ','ಇ','ಈ','ಉ','ಊ','ಋ','ೠ','ಎ','ಏ','ಐ','ಒ','ಓ','ಔ']);
+const VOWEL_SIGNS = new Set(['ಾ','ಿ','ೀ','ು','ೂ','ೃ','ೄ','ೆ','ೇ','ೈ','ೊ','ೋ','ೌ','ಂ','ಃ']);
+function isVowelGlyph(ch) {
+  return INDEPENDENT_VOWELS.has(ch) || VOWEL_SIGNS.has(ch);
+}
+
+// Gentle hue cues: consonants vs vowels; tuned for light/dark
+const TILE_HUES = {
+  light: {
+    cons: ['#D1FAE5', '#BBF7D0', '#A7F3D0', '#86EFAC'],
+    vowel: ['#E0E7FF', '#C7D2FE', '#E9D5FF', '#E0F2FE'],
+  },
+  dark: {
+    cons: ['rgba(16,185,129,0.35)', 'rgba(34,197,94,0.35)', 'rgba(74,222,128,0.35)'],
+    vowel: ['rgba(99,102,241,0.35)', 'rgba(56,189,248,0.35)', 'rgba(168,85,247,0.35)'],
+  }
+};
+
+// Romanization for micro-feedback (subset; extend as needed)
+const KAN_TO_ROMAN = {
+  'ಅ':'a','ಆ':'aa','ಇ':'i','ಈ':'ii','ಉ':'u','ಊ':'uu','ಎ':'e','ಏ':'ee','ಐ':'ai','ಒ':'o','ಓ':'oo','ಔ':'au','ಅಂ':'am','ಅಃ':'ah',
+  'ಋ':'ru','ೠ':'ruu','ಌ':'lru','ೡ':'lruu',
+  'ಕ':'ka','ಖ':'kha','ಗ':'ga','ಘ':'gha','ಙ':'nga',
+  'ಚ':'cha','ಛ':'chha','ಜ':'ja','ಝ':'jha','ಞ':'nya',
+  'ಟ':'ta','ಠ':'tha','ಡ':'da','ಢ':'dha','ಣ':'na',
+  'ತ':'ta','ಥ':'tha','ದ':'da','ಧ':'dha','ನ':'na',
+  'ಪ':'pa','ಫ':'pha','ಬ':'ba','ಭ':'bha','ಮ':'ma',
+  'ಯ':'ya','ರ':'ra','ಲ':'la','ವ':'va','ಶ':'sha','ಷ':'ssha','ಸ':'sa','ಹ':'ha','ಳ':'lla','ಱ':'rra'
+  ,
+  // vowel signs (matras)
+  'ಾ':'aa','ಿ':'i','ೀ':'ii','ು':'u','ೂ':'uu','ೃ':'ru','ೄ':'ruu','ೆ':'e','ೇ':'ee','ೈ':'ai','ೊ':'o','ೋ':'oo','ೌ':'au','ಂ':'am','ಃ':'ah','ಁ':'anunasika',
+  // halant / virama
+  '್':'halant'
+};
+function romanFor(g) { return KAN_TO_ROMAN[g] || ''; }
+function formatGlyphName(g) {
+  // Friendly labels for signs that don't render well in isolation
+  if (VOWEL_SIGNS.has(g)) {
+    const r = KAN_TO_ROMAN[g] || '';
+    const h = KAN_TO_HI[g] || '';
+    return `vowel sign ${g}${r || h ? ` (${r}${r && h ? ' / ' : ''}${h || ''})` : ''}`;
+  }
+  if (g === '್') return 'halant (्)';
+  if (g === 'ಂ') return 'anusvara (ं)';
+  if (g === 'ಃ') return 'visarga (ः)';
+  if (g === 'ಁ') return 'chandrabindu (ँ)';
+  const r = romanFor(g);
+  const h = KAN_TO_HI[g];
+  if (r && h) return `${g} (${r} / ${h})`;
+  if (r) return `${g} (${r})`;
+  if (h) return `${g} (${h})`;
+  return g;
+}
+
+const THEME_STORAGE_KEY = "kannada_app_theme";
+const THEMES = {
+  light: {
+    bodyBackground: "#f5f7ff",
+    appBackground: "linear-gradient(180deg,#f6f8ff 0%, #fff 60%)",
+    textPrimary: "#111827",
+    textMuted: "#6b7280",
+    surface: "#ffffff",
+    surfaceSubtle: "#f3f4f6",
+    panel: "#f7fafc",
+    control: "#ffffff",
+    controlHover: "#f9fafb",
+    border: "#e5e7eb",
+    softBorder: "rgba(0,0,0,0.08)",
+    elevatedShadow: "0 12px 40px rgba(12,20,40,0.06)",
+    softShadow: "0 10px 30px rgba(0,0,0,0.06)",
+    insetShadow: "inset 0 0 0 2px rgba(0,0,0,0.04)",
+    overlay: "rgba(17,24,39,0.35)",
+    timerDefault: "#eef2ff",
+    timerWarning: "#fef3c7",
+    timerCritical: "#fee2e2",
+    timerText: "#374151",
+  },
+  dark: {
+    bodyBackground: "#020617",
+    appBackground: "linear-gradient(180deg,#0f172a 0%, #0b1120 60%)",
+    textPrimary: "#e2e8f0",
+    textMuted: "#94a3b8",
+    surface: "rgba(15,23,42,0.92)",
+    surfaceSubtle: "rgba(148,163,184,0.12)",
+    panel: "rgba(30,41,59,0.55)",
+    control: "rgba(15,23,42,0.85)",
+    controlHover: "rgba(30,41,59,0.7)",
+    border: "rgba(148,163,184,0.32)",
+    softBorder: "rgba(148,163,184,0.16)",
+    elevatedShadow: "0 18px 50px rgba(2,6,23,0.65)",
+    softShadow: "0 14px 36px rgba(2,6,23,0.5)",
+    insetShadow: "inset 0 0 0 2px rgba(148,163,184,0.18)",
+    overlay: "rgba(15,23,42,0.72)",
+    timerDefault: "rgba(99,102,241,0.22)",
+    timerWarning: "rgba(234,179,8,0.28)",
+    timerCritical: "rgba(248,113,113,0.24)",
+    timerText: "#f8fafc",
+  },
+};
 
 function shuffleArray(arr) {
   const copy = [...arr];
@@ -131,6 +243,38 @@ function saveEngStats(profile, s) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem(THEME_STORAGE_KEY);
+        if (stored === 'dark' || stored === 'light') return stored;
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+          return 'dark';
+        }
+      } catch {}
+    }
+    return 'light';
+  });
+  const themeColors = useMemo(() => THEMES[theme] || THEMES.light, [theme]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {}
+    const body = document.body;
+    if (body) {
+      body.style.background = themeColors.bodyBackground;
+      body.style.color = themeColors.textPrimary;
+      body.dataset.theme = theme;
+    }
+    const root = document.documentElement;
+    if (root) {
+      root.style.background = themeColors.bodyBackground;
+      root.style.color = themeColors.textPrimary;
+    }
+  }, [theme, themeColors]);
+  const choose = (lightValue, darkValue) => (theme === 'dark' ? darkValue : lightValue);
+
   const [profile, setProfile] = useState(PROFILES[0]);
   // Arrange-only app: randomize by default (no UI toggle)
   const [randomize] = useState(true);
@@ -148,14 +292,43 @@ export default function App() {
 
   const clusters = useMemo(() => Array.from(card.wordKannada || ""), [card]);
   const colors = useMemo(() => paletteFor(clusters.length), [clusters.length]);
+  // Build a stable color map per-card so the same glyph keeps the same color
+  const glyphColorMap = useMemo(() => {
+    const map = {};
+    const themeMode = theme === 'dark' ? 'dark' : 'light';
+    const vowelArr = (TILE_HUES[themeMode] && TILE_HUES[themeMode].vowel) || [];
+    const consArr = (TILE_HUES[themeMode] && TILE_HUES[themeMode].cons) || [];
+    let vi = 0;
+    let ci = 0;
+    for (const g of clusters) {
+      if (map[g]) continue;
+      if (isVowelGlyph(g) && vowelArr.length) {
+        map[g] = vowelArr[vi % vowelArr.length];
+        vi++;
+      } else if (!isVowelGlyph(g) && consArr.length) {
+        map[g] = consArr[ci % consArr.length];
+        ci++;
+      } else {
+        // Fallback to general palette if themed arrays are missing
+        const idx = Object.keys(map).length;
+        map[g] = colors[idx % colors.length];
+      }
+    }
+    return map;
+  }, [clusters, theme, colors]);
+
+  function tileColorFor(glyph, idx) {
+    return glyphColorMap[glyph] || colors[idx % colors.length];
+  }
 
   const [tiles, setTiles] = useState([]);
   const [slots, setSlots] = useState([]);
   // track whether the learner has made an attempt (placed any tile) for the current card
   const [hasAttempted, setHasAttempted] = useState(false);
-  const [hintVisible, setHintVisible] = useState(false);
   const [result, setResult] = useState(null);
   const [lastCorrectWord, setLastCorrectWord] = useState(null);
+  const [showKannadaAnswer, setShowKannadaAnswer] = useState(false);
+  const [microFeedback, setMicroFeedback] = useState(null);
 
   const [glyphStats, setGlyphStats] = useState(() => loadGlyphStats(PROFILES[0]));
   const [mathStats, setMathStats] = useState(() => loadMathStats(PROFILES[0]));
@@ -186,10 +359,7 @@ export default function App() {
     return () => document.removeEventListener("pointerdown", onDocClick);
   }, []);
 
-  // hint state: only highlight the next required glyph (index), and limit hints to 2 per word
-  const [hintsUsed, setHintsUsed] = useState(0);
-  const [hintIndex, setHintIndex] = useState(null); // index of the next glyph being hinted
-  const [hintedIndices, setHintedIndices] = useState(() => new Set());
+  // hints removed
 
   useEffect(() => {
     setGlyphStats(loadGlyphStats(profile));
@@ -225,7 +395,7 @@ export default function App() {
 
   // prepare tiles & slots whenever card changes
   useEffect(() => {
-    const base = clusters.map((g, i) => ({ g, idx: i, c: colors[i] }));
+    const base = clusters.map((g, i) => ({ g, idx: i, c: tileColorFor(g, i) }));
     let shuf = shuffleArray(base);
     let attempts = 0;
     // avoid accidentally leaving them in correct order
@@ -236,13 +406,11 @@ export default function App() {
     setTiles(shuf);
     setSlots(new Array(clusters.length).fill(null));
     setHasAttempted(false);
-    setHintsUsed(0);
-    setHintIndex(null);
-    setHintedIndices(new Set());
     setTvMinutesLock(new Set());
-    setHintVisible(false);
     setResult(null);
     setLastCorrectWord(null);
+    setShowKannadaAnswer(false);
+    setMicroFeedback(null);
   }, [cardIndex, card.wordKannada]);
 
   // drag handlers
@@ -267,7 +435,7 @@ export default function App() {
     const newTiles = tiles.filter((_, i) => i !== tileIndex);
     const existing = slots[slotIndex];
     const newSlots = [...slots];
-    newSlots[slotIndex] = tile;
+    newSlots[slotIndex] = { ...tile, c: tileColorFor(tile.g, slotIndex) };
     setTiles(existing ? [...newTiles, existing] : newTiles);
     setSlots(newSlots);
     setResult(null);
@@ -292,7 +460,7 @@ export default function App() {
     if (firstEmpty === -1) return;
     const newTiles = tiles.filter((_, i) => i !== tileIdx);
     const newSlots = [...slots];
-    newSlots[firstEmpty] = tile;
+    newSlots[firstEmpty] = { ...tile, c: tileColorFor(tile.g, firstEmpty) };
     setTiles(newTiles);
     setSlots(newSlots);
     setResult(null);
@@ -333,27 +501,36 @@ export default function App() {
       const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
       stat.attempts = (stat.attempts || 0) + 1;
       const placed = slots[i] ? slots[i].g : "";
-      // if this glyph was hinted, treat it as assisted: count attempt but do not count as correct
-      const wasHinted = hintedIndices.has(i);
-      if (!wasHinted && placed === key) stat.correct = (stat.correct || 0) + 1;
+      if (placed === key) stat.correct = (stat.correct || 0) + 1;
       updated[key] = stat;
     }
     setGlyphStats(updated);
     saveGlyphStats(profile, updated);
 
-    // clear hinted indices for the next round
-    setHintedIndices(new Set());
+    // hints removed
     const ok = assembled === expected;
     setResult(ok ? "correct" : "incorrect");
     setLastCorrectWord(ok ? null : expected);
+    if (!ok) {
+      let wrongIdx = null;
+      for (let i = 0; i < clusters.length; i++) {
+        const placed = slots[i] ? slots[i].g : "";
+        if (placed !== clusters[i]) { wrongIdx = i; break; }
+      }
+      if (wrongIdx !== null) {
+        const g = clusters[wrongIdx];
+        setMicroFeedback(formatGlyphName(g));
+      }
+    } else {
+      setMicroFeedback(null);
+    }
   }
 
   function handleReset() {
-    const base = clusters.map((g, i) => ({ g, idx: i, c: colors[i] }));
+    const base = clusters.map((g, i) => ({ g, idx: i, c: tileColorFor(g, i) }));
     setTiles(shuffleArray(base));
     setSlots(new Array(clusters.length).fill(null));
     setResult(null);
-    setHintVisible(false);
     setHasAttempted(false);
     setLastCorrectWord(null);
   }
@@ -370,32 +547,7 @@ export default function App() {
     setHasAttempted(false);
   }
 
-  function showHint(durationMs = 2200) {
-    if (!hasAttempted) return; // gate hints until learner attempts
-    if (hintsUsed >= 2) return; // max 2 hints per word
-
-    // find the next slot index that is missing or incorrect
-    const expected = clusters.join("");
-    let nextIdx = null;
-    for (let i = 0; i < clusters.length; i++) {
-      const placed = slots[i] ? slots[i].g : "";
-      if (placed !== clusters[i]) {
-        nextIdx = i;
-        break;
-      }
-    }
-    if (nextIdx === null) return;
-
-  setHintIndex(nextIdx);
-  setHintsUsed((h) => h + 1);
-  setHintedIndices((prev) => new Set([...prev, nextIdx]));
-    setHintVisible(true);
-    // hide hint after duration
-    setTimeout(() => {
-      setHintVisible(false);
-      setHintIndex(null);
-    }, durationMs);
-  }
+// hints removed
 
   const weakGlyphs = useMemo(() => {
     return Object.entries(glyphStats)
@@ -405,11 +557,16 @@ export default function App() {
       .slice(0, 12);
   }, [glyphStats]);
 
-  function glyphColorFor(accuracy) {
-    if (accuracy < 0.7) return "#fee2e2";
-    if (accuracy < 0.9) return "#fff7ed";
-    return "#ecfdf5";
+function glyphColorFor(accuracy, themeMode = 'light') {
+  if (themeMode === 'dark') {
+    if (accuracy < 0.7) return "rgba(248,113,113,0.28)";
+    if (accuracy < 0.9) return "rgba(234,179,8,0.25)";
+    return "rgba(16,185,129,0.25)";
   }
+  if (accuracy < 0.7) return "#fee2e2";
+  if (accuracy < 0.9) return "#fff7ed";
+  return "#ecfdf5";
+}
 
   // parent award handler
   function awardMinutesViaParent(e) {
@@ -632,11 +789,11 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
   const [answer, setAnswer] = useState("");
   const answerRef = useRef(null);
   // per-question timer state
-  const [timeLeft, setTimeLeft] = useState(60);
-  const [currentTimeLimit, setCurrentTimeLimit] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(120);
+  const [currentTimeLimit, setCurrentTimeLimit] = useState(120);
   const [timedOut, setTimedOut] = useState(false);
   const timerRef = useRef(null);
-  const timeLimitRef = useRef(60);
+  const timeLimitRef = useRef(120);
   const audioCtxRef = useRef(null);
 
   function getAudioCtx() {
@@ -728,6 +885,12 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     setTimedOut(true);
     setResult('incorrect');
     setAnswer("");
+  }
+
+  function handleKannadaTimeout() {
+    if (result) return;
+    setTimedOut(true);
+    handleSubmit();
   }
 
   function handleEnglishTimeout() {
@@ -831,20 +994,15 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
       .slice(0, 12);
   }, [engStats]);
 
-  // Start/Reset 15s timer for Math and English
+  // Start/Reset timers per mode (unified 120s timer for all modes)
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    setTimedOut(false);
-    let limit = 60;
-    if (mode === 'math') {
-      limit = getMathTimeLimit(mathQ);
-    } else if (mode === 'english') {
-      limit = 60;
-    }
+    let limit = 120;
     timeLimitRef.current = limit;
     setCurrentTimeLimit(limit);
     if (result) return;
-    if (mode !== 'math' && mode !== 'english') return;
+    if (mode !== 'math' && mode !== 'english' && mode !== 'kannada') return;
+    setTimedOut(false);
     setTimeLeft(limit);
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
@@ -853,6 +1011,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
           timerRef.current = null;
           if (mode === 'math') handleMathTimeout();
           else if (mode === 'english') handleEnglishTimeout();
+          else if (mode === 'kannada') handleKannadaTimeout();
           return 0;
         }
         const next = t - 1;
@@ -866,7 +1025,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
         timerRef.current = null;
       }
     };
-  }, [mode, mathQ, engIndex]);
+  }, [mode, mathQ, engIndex, cardIndex, result]);
 
   // Stop timer once result is shown
   useEffect(() => {
@@ -883,33 +1042,39 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     else playBeep(330, 0.3);
   }, [result]);
 
+  const timerBadgeStyle = useMemo(() => {
+    const background = timeLeft <= 3 ? themeColors.timerCritical : (timeLeft <= 7 ? themeColors.timerWarning : themeColors.timerDefault);
+    const color = timeLeft <= 3 ? (theme === 'dark' ? '#fecaca' : '#991b1b') : themeColors.timerText;
+    return { background, color };
+  }, [timeLeft, themeColors, theme]);
+
   return (
     <>
     <style>{`
       @keyframes pulseBadge {0%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,.45);} 70%{transform:scale(1.03); box-shadow:0 0 0 12px rgba(245,158,11,0);} 100%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,0);}}
       .bonus-badge { animation: pulseBadge 1.2s infinite; }
     `}</style>
-    <div style={{ minHeight: "100vh", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: "linear-gradient(180deg,#f6f8ff 0%, #fff 60%)" }}>
+    <div style={{ minHeight: "100vh", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: themeColors.appBackground, color: themeColors.textPrimary, transition: "background 0.4s ease, color 0.4s ease" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div>
-              <label style={{ marginRight: 8, color: "#6b7280", fontWeight: 700 }}>Learner:</label>
+              <label style={{ marginRight: 8, color: themeColors.textMuted, fontWeight: 700 }}>Learner:</label>
               <select value={profile} onChange={(e) => {
                   const next = e.target.value;
                   // persist current profile minutes
                   saveTvMinutes(profile, tvMinutes);
                   setProfile(next);
                   // load next profile minutes (effect handles setTvMinutes)
-                }} style={{ padding: "6px 10px", borderRadius: 8 }}>
+                }} style={{ padding: "6px 10px", borderRadius: 8, background: themeColors.control, color: themeColors.textPrimary, border: `1px solid ${themeColors.border}` }}>
                 {PROFILES.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
             </div>
             <div>
-              <label style={{ margin: '0 8px 0 12px', color: '#6b7280', fontWeight: 700 }}>Mode:</label>
-              <select value={mode} onChange={(e) => { setMode(e.target.value); setResult(null); }} style={{ padding: "6px 10px", borderRadius: 8 }}>
+              <label style={{ margin: '0 8px 0 12px', color: themeColors.textMuted, fontWeight: 700 }}>Mode:</label>
+              <select value={mode} onChange={(e) => { setMode(e.target.value); setResult(null); }} style={{ padding: "6px 10px", borderRadius: 8, background: themeColors.control, color: themeColors.textPrimary, border: `1px solid ${themeColors.border}` }}>
                 <option value="kannada">Kannada</option>
                 <option value="math">Math</option>
                 <option value="english">English</option>
@@ -917,34 +1082,47 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
             </div>
             {/* Arrange-only: mode and randomize are fixed (random by default) */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ background: "#f3f4f6", padding: "6px 10px", borderRadius: 8, fontWeight: 700 }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
-              <button onClick={() => { setShowParent(true); setParentError(""); }} title="Parent controls" style={{ padding: '6px 10px', border: '1px solid #e5e7eb', background: 'white', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>Parent</button>
+              <div style={{ background: themeColors.surfaceSubtle, padding: "6px 10px", borderRadius: 8, fontWeight: 700, color: themeColors.textPrimary }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
+              <button onClick={() => { setShowParent(true); setParentError(""); }} title="Parent controls" style={{ padding: '6px 10px', border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>Parent</button>
+              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ padding: '6px 12px', borderRadius: 9999, border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, cursor: 'pointer', fontWeight: 700 }} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+                {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+              </button>
             </div>
           </div>
           {mode === 'kannada' ? (
-            <div style={{ color: "#6b7280" }}>Card {cardIndex + 1} / {deck.length}</div>
+            <div style={{ color: themeColors.textMuted }}>Card {cardIndex + 1} / {deck.length}</div>
           ) : mode === 'math' ? (
-            <div style={{ color: "#6b7280" }}>Math practice</div>
+            <div style={{ color: themeColors.textMuted }}>Math practice</div>
           ) : (
-            <div style={{ color: "#6b7280" }}>Word {engIndex + 1} / {engDeck.length}</div>
+            <div style={{ color: themeColors.textMuted }}>Word {engIndex + 1} / {engDeck.length}</div>
           )}
         </div>
 
-        <div style={{ background: "white", padding: 20, borderRadius: 12, boxShadow: "0 12px 40px rgba(12,20,40,0.06)" }}>
+        <div style={{ background: themeColors.surface, padding: 20, borderRadius: 12, boxShadow: themeColors.elevatedShadow, transition: "background 0.3s ease, box-shadow 0.3s ease" }}>
           {mode === 'kannada' ? (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ fontSize: 34, fontWeight: 900 }}>{card.transliterationHi || card.transliteration}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: themeColors.textMuted }}>
+                <span role="img" aria-label="switch languages">🔁</span>
+                <span>Make this word in Kannada</span>
+                {showKannadaAnswer && (
+                  <div style={{ textAlign: 'center', marginTop: 4, fontSize: 40, fontWeight: 900, letterSpacing: 1, color: themeColors.textPrimary }}>
+                    {clusters.join("")}
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: 13, color: "#6b7280" }}>Arrange the word for</div>
+            <div style={{ textAlign: "right", display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+              <div style={{ fontSize: 13, color: themeColors.textMuted }}>Arrange the word for</div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>{card.transliterationHi ? "" : card.transliteration}</div>
+              <div style={{ fontWeight: 800, fontSize: 16, display: 'inline-flex', alignItems: 'center', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
             </div>
           </div>
           ) : mode === 'math' ? (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 32, color: '#4b5563', display: 'flex', alignItems: 'center', gap: 12, fontWeight: 700 }}>
+              <div style={{ fontSize: 32, color: themeColors.textPrimary, display: 'flex', alignItems: 'center', gap: 12, fontWeight: 700 }}>
                 Solve the problem
                 {mathQ.bonus && (
                   <span className="bonus-badge" style={{ padding: '4px 8px', background: '#fef3c7', color: '#92400e', borderRadius: 9999, fontSize: 12, fontWeight: 800 }}>Bonus: +20 / −20</span>
@@ -953,13 +1131,13 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
               {mathQ.op === 'place' || mathQ.op === 'face' ? (
                 <div style={{ fontSize: 42, fontWeight: 900 }}>
                   {mathQ.op === 'place' ? 'Place value of digit' : 'Face value of digit'}{' '}
-                  <span style={{ padding: '2px 8px', background: '#eef2ff', borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
+                  <span style={{ padding: '2px 8px', background: choose('#eef2ff', 'rgba(99,102,241,0.28)'), borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
                   {' '}in {mathQ.number}
                 </div>
               ) : mathQ.op === 'placeName' ? (
                 <div style={{ fontSize: 42, fontWeight: 900 }}>
                   Which place is{' '}
-                  <span style={{ padding: '2px 8px', background: '#eef2ff', borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
+                  <span style={{ padding: '2px 8px', background: choose('#eef2ff', 'rgba(99,102,241,0.28)'), borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
                   {' '}in {mathQ.number}?
                 </div>
               ) : (
@@ -967,19 +1145,19 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
               )}
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 13, color: '#6b7280' }}>Enter the answer</div>
-              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timeLeft <= 3 ? '#fee2e2' : (timeLeft <= 7 ? '#fef3c7' : '#eef2ff'), color: timeLeft <= 3 ? '#991b1b' : '#374151' }}>⏱ {timeLeft}s</div>
+              <div style={{ fontSize: 13, color: themeColors.textMuted }}>Enter the answer</div>
+              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
             </div>
           </div>
           ) : (
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div>
-              <div style={{ fontSize: 32, color: '#4b5563', fontWeight: 700 }}>Read the word</div>
+              <div style={{ fontSize: 32, color: themeColors.textPrimary, fontWeight: 700 }}>Read the word</div>
               <div style={{ fontSize: 60, fontWeight: 900, letterSpacing: 1 }}>{engWord}</div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 13, color: '#6b7280' }}>Tap if read or not</div>
-              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timeLeft <= 3 ? '#fee2e2' : (timeLeft <= 7 ? '#fef3c7' : '#eef2ff'), color: timeLeft <= 3 ? '#991b1b' : '#374151' }}>⏱ {timeLeft}s</div>
+              <div style={{ fontSize: 13, color: themeColors.textMuted }}>Tap if read or not</div>
+              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
             </div>
           </div>
           )}
@@ -995,49 +1173,39 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                   {tiles.map((tile, i) => (
                     <div key={`${tile.g}-${i}`} style={{ position: "relative" }}>
-                      {hintVisible && hintIndex !== null && hintIndex === tile.idx && (
-                        <div style={{ position: "absolute", top: -10, right: -10, width: 28, height: 28, borderRadius: 14, background: "rgba(0,0,0,0.08)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800 }}>{tile.idx + 1}</div>
-                      )}
-                      <div draggable onDragStart={(e) => onDragStart(e, i)} onClick={() => placeTileToFirstEmpty(i)} style={{ cursor: "grab", userSelect: "none", background: tile.c, padding: "16px 18px", borderRadius: 12, fontSize: 36, display: "flex", alignItems: "center", justifyContent: "center", minWidth: 76, minHeight: 72, boxShadow: hintVisible && hintIndex === tile.idx ? "0 12px 36px rgba(16,185,129,0.18)" : "0 8px 28px rgba(0,0,0,0.06)", outline: hintVisible && hintIndex === tile.idx ? "3px solid rgba(16,185,129,0.12)" : "none" }} title="Drag to a slot or tap to place">{tile.g}</div>
+                      <div draggable onDragStart={(e) => onDragStart(e, i)} onClick={() => placeTileToFirstEmpty(i)} style={{ cursor: "grab", userSelect: "none", background: tile.c, color: "#0f172a", padding: "16px 18px", borderRadius: 12, fontSize: 36, display: "flex", alignItems: "center", justifyContent: "center", minWidth: 76, minHeight: 72, boxShadow: "0 8px 28px rgba(0,0,0,0.06)", letterSpacing: 1 }} title="Drag to a slot or tap to place">{tile.g}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* Slots */}
-              <div style={{ marginBottom: 18, padding: 12, background: "#f7fafc", borderRadius: 12 }}>
+              <div style={{ marginBottom: 18, padding: 12, background: themeColors.panel, borderRadius: 12, transition: "background 0.3s ease" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "nowrap", minHeight: 92 }}>
                   {slots.map((slot, i) => (
                     <div key={i} style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center" }}>
-                      {hintVisible && hintIndex === i && (<div style={{ position: "absolute", top: -10, right: -10, width: 28, height: 28, borderRadius: 14, background: "rgba(0,0,0,0.06)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800 }}>{i + 1}</div>)}
-                      <div onDragOver={onDragOverSlot} onDrop={(e) => onDropToSlot(e, i)} onClick={() => returnSlotToPool(i)} style={{ width: 86, height: 86, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: slot ? slot.c : "white", boxShadow: hintVisible && hintIndex === i ? "0 12px 36px rgba(16,185,129,0.12)" : slot ? "0 10px 30px rgba(0,0,0,0.06)" : "inset 0 0 0 2px rgba(0,0,0,0.04)", fontSize: 42, cursor: slot ? "pointer" : "copy", outline: hintVisible && hintIndex === i ? "3px solid rgba(16,185,129,0.08)" : "none" }} title={slot ? "Click to return to pool" : "Drop tile here"}>{slot ? slot.g : ""}</div>
+                      <div onDragOver={onDragOverSlot} onDrop={(e) => onDropToSlot(e, i)} onClick={() => returnSlotToPool(i)} style={{ width: 86, height: 86, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", background: slot ? slot.c : choose('#ffffff', 'rgba(15,23,42,0.9)'), color: slot ? '#0f172a' : themeColors.textPrimary, boxShadow: slot ? themeColors.softShadow : themeColors.insetShadow, fontSize: 42, cursor: slot ? "pointer" : "copy", letterSpacing: 1 }} title={slot ? "Click to return to pool" : "Drop tile here"}>{slot ? slot.g : ""}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Controls */}
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              {/* Controls — only core actions for kids */}
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: 'wrap' }}>
                 <button onClick={handleSubmit} style={{ padding: "12px 22px", background: "#10b981", color: "white", border: "none", borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize: 18 }}>Submit</button>
-                <button onClick={() => showHint()} disabled={!hasAttempted || hintsUsed >= 2} title={!hasAttempted ? "Place at least one tile first to enable hint" : hintsUsed >= 2 ? "No hints remaining for this word" : `Hints used: ${hintsUsed}/2`} style={{ padding: "12px 20px", background: "#fef3c7", border: "none", borderRadius: 14, cursor: !hasAttempted || hintsUsed >= 2 ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 18, opacity: !hasAttempted ? 0.6 : 1 }}>{`Hint (${2 - hintsUsed} left)`}</button>
+                
 
-                <div style={{ position: "relative" }} ref={moreRef}>
-                  <button onClick={() => setShowMore((s) => !s)} aria-expanded={showMore} style={{ listStyle: "none", padding: "12px 20px", borderRadius: 14, background: "#eef2ff", cursor: "pointer", fontWeight: 700, fontSize: 18 }}>More ▾</button>
-                  {showMore && (
-                    <div style={{ position: "absolute", right: 0, marginTop: 8, padding: 12, background: "white", borderRadius: 10, boxShadow: "0 10px 40px rgba(12,20,40,0.08)", minWidth: 160 }}>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <button onClick={() => { handleReset(); setShowMore(false); }} style={{ padding: "10px 12px", borderRadius: 8, background: "#fff", border: "1px solid #e6e6e6", cursor: "pointer", textAlign: "left" }}>Reset tiles</button>
-                        <button onClick={() => { handleReshuffle(); setShowMore(false); }} style={{ padding: "10px 12px", borderRadius: 8, background: "#fff", border: "1px solid #e6e6e6", cursor: "pointer", textAlign: "left" }}>Reshuffle deck</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                {result === 'incorrect' && microFeedback && (
+                  <div style={{ padding: '10px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.2)'), color: themeColors.textPrimary, borderRadius: 10, fontWeight: 800 }}>
+                    The next letter is {microFeedback}. Try again!
+                  </div>
+                )}
 
                 {result === "correct" && <button onClick={handleNext} style={{ padding: "12px 22px", background: "#bfdbfe", borderRadius: 14, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 18 }}>Next</button>}
                 {result === "correct" && <div style={{ marginLeft: 6, color: "#166534", fontWeight: 800 }}>✅ Correct</div>}
                 {result === "incorrect" && (
-                  <div style={{ marginLeft: 6, color: "#b91c1c", fontWeight: 800 }}>
-                    ❌ Incorrect — answer: {lastCorrectWord || clusters.join("")}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 12, background: choose('#fee2e2', 'rgba(248,113,113,0.2)'), color: choose('#991b1b', '#fecaca'), fontWeight: 900, fontSize: 18 }}>
+                    {timedOut ? '⏰ Time up' : '❌ Not correct'}
                   </div>
                 )}
               </div>
@@ -1085,83 +1253,56 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
 
               {/* Right panel */}
               <aside style={{ width: 320, position: 'sticky', top: 12 }}>
-              <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
+              <div style={{ padding: 14, borderRadius: 12, background: themeColors.surface, boxShadow: themeColors.softShadow, border: `1px solid ${themeColors.softBorder}`, transition: "background 0.3s ease" }}>
                 {mode === 'kannada' ? (
                   <>
-                  <h3 style={{ marginTop: 0 }}>Weak glyphs</h3>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy glyphs for {profile}</div>
+                  <h3 style={{ marginTop: 0 }}>Practice buddies</h3>
+                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>These letters are learning with you, {profile}! Keep going.</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — play a few rounds to collect data.</div>}
+                    {weakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>Keep playing! We’ll track tricky letters for you.</div>}
                     {weakGlyphs.map((w) => (
-                      <div key={w.glyph} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                        <div style={{ fontSize: 28 }}>{w.glyph}</div>
-                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                      <div key={w.glyph} style={{ padding: 10, borderRadius: 12, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, lineHeight: 1 }}>
+                          <div style={{ fontSize: 30 }}>{w.glyph}</div>
+                          {KAN_TO_HI[w.glyph] && <div style={{ fontSize: 18, fontWeight: 800 }}>{KAN_TO_HI[w.glyph]}</div>}
+                          {KAN_TO_ROMAN[w.glyph] && <div style={{ fontSize: 12, fontWeight: 800, color: themeColors.textMuted, marginTop: 2 }}>{KAN_TO_ROMAN[w.glyph]}</div>}
+                        </div>
                       </div>
                     ))}
                   </div>
 
-                  <div style={{ marginTop: 12 }}>
-                    <button onClick={() => { localStorage.removeItem(statsKeyFor(profile)); setGlyphStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s glyph stats</button>
-                  </div>
-
-                  <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-                    <div style={{ marginBottom: 8, fontWeight: 700 }}>Deck controls</div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => { setDeck((d) => shuffleArray(d)); setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Shuffle order</button>
-                      <button onClick={() => { setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Go to first</button>
-                    </div>
-                  </div>
                   </>
                 ) : mode === 'math' ? (
                   <>
                   <h3 style={{ marginTop: 0 }}>Weak math facts</h3>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy for {profile}</div>
+                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>Lowest accuracy for {profile}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakFacts.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — answer a few questions.</div>}
+                    {weakFacts.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>No stats yet — answer a few questions.</div>}
                     {weakFacts.map((w) => (
-                      <div key={w.fact} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                      <div key={w.fact} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
                         <div style={{ fontSize: 20 }}>{w.fact}</div>
                         <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                        <div style={{ fontSize: 11, color: themeColors.textMuted }}>{w.correct}/{w.attempts}</div>
                       </div>
                     ))}
                   </div>
 
-                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <button onClick={() => { localStorage.removeItem(mathStatsKeyFor(profile)); setMathStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s math stats</button>
-                    <div style={{ fontSize: 12, color: '#6b7280' }}>Bonus settings</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'center' }}>
-                      <label style={{ fontSize: 12 }}>Frequency</label>
-                      <input type="number" min={0} max={1} step={0.05} value={bonusFrequency} onChange={(e) => setBonusFrequency(Math.max(0, Math.min(1, Number(e.target.value))))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
-                      <label style={{ fontSize: 12 }}>Reward</label>
-                      <input type="number" min={1} step={1} value={bonusReward} onChange={(e) => setBonusReward(Math.max(1, Number(e.target.value)))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
-                      <label style={{ fontSize: 12 }}>Penalty</label>
-                      <input type="number" min={1} step={1} value={bonusPenalty} onChange={(e) => setBonusPenalty(Math.max(1, Number(e.target.value)))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
-                    </div>
-                  </div>
                   </>
                 ) : (
                   <>
                   <h3 style={{ marginTop: 0 }}>Weak words</h3>
-                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy for {profile}</div>
+                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>Lowest accuracy for {profile}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakEnglish.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — practice a few words.</div>}
+                    {weakEnglish.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>No stats yet — practice a few words.</div>}
                     {weakEnglish.map((w) => (
-                      <div key={w.word} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                      <div key={w.word} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
                         <div style={{ fontSize: 16, fontWeight: 700 }}>{w.word}</div>
                         <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                        <div style={{ fontSize: 11, color: themeColors.textMuted }}>{w.correct}/{w.attempts}</div>
                       </div>
                     ))}
                   </div>
 
-                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button onClick={() => { localStorage.removeItem(engStatsKeyFor(profile)); setEngStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s English stats</button>
-                    <button onClick={() => { setEngDeck((d) => shuffleArray(d)); setEngIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Shuffle order</button>
-                    <button onClick={() => { setEngIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Go to first</button>
-                    <button onClick={reshuffleEnglish} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>New 200 sample</button>
-                  </div>
                   </>
                 )}
               </div>
@@ -1183,11 +1324,11 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
           </div>
           <form onSubmit={awardMinutesViaParent}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <label style={{ fontSize: 13, color: '#6b7280' }}>Passcode</label>
-              <input type="password" inputMode="numeric" pattern="[0-9]*" value={parentPass} onChange={(e) => setParentPass(e.target.value)} placeholder="6-digit passcode" style={{ padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 16 }} />
+              <label style={{ fontSize: 13, color: themeColors.textMuted }}>Passcode</label>
+              <input type="password" inputMode="numeric" pattern="[0-9]*" value={parentPass} onChange={(e) => setParentPass(e.target.value)} placeholder="6-digit passcode" style={{ padding: '10px 12px', border: `1px solid ${themeColors.border}`, borderRadius: 10, fontSize: 16, background: themeColors.control, color: themeColors.textPrimary }} />
 
               <div style={{ marginTop: 4 }}>
-                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Quick adjust (Good/Bad behavior)</div>
+                <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 6 }}>Quick adjust (Good/Bad behavior)</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
                   <button type="button" onClick={() => quickAdjustTvMinutes(-10)} style={{ padding: '10px 8px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>−10</button>
                   <button type="button" onClick={() => quickAdjustTvMinutes(-5)} style={{ padding: '10px 8px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>−5</button>
@@ -1198,15 +1339,28 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                 </div>
               </div>
 
-              <label style={{ fontSize: 13, color: '#6b7280', marginTop: 6 }}>Custom award (minutes)</label>
-              <input type="number" min={1} step={1} value={parentMinutes} onChange={(e) => setParentMinutes(e.target.value)} placeholder="e.g. 10" style={{ padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 16 }} />
+              <label style={{ fontSize: 13, color: themeColors.textMuted, marginTop: 6 }}>Custom award (minutes)</label>
+              <input type="number" min={1} step={1} value={parentMinutes} onChange={(e) => setParentMinutes(e.target.value)} placeholder="e.g. 10" style={{ padding: '10px 12px', border: `1px solid ${themeColors.border}`, borderRadius: 10, fontSize: 16, background: themeColors.control, color: themeColors.textPrimary }} />
               {parentError && <div style={{ color: '#b91c1c', fontWeight: 700 }}>{parentError}</div>}
               <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 <button type="submit" style={{ padding: '10px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Award</button>
-                <button type="button" onClick={() => setShowParent(false)} style={{ padding: '10px 12px', background: '#e5e7eb', color: '#111827', border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Close</button>
+                <button type="button" onClick={() => setShowParent(false)} style={{ padding: '10px 12px', background: choose('#e5e7eb', 'rgba(148,163,184,0.18)'), color: themeColors.textPrimary, border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Close</button>
                 <button type="button" onClick={resetAllTvMinutesViaParent} title="Requires passcode" style={{ padding: '10px 12px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset all TV minutes</button>
               </div>
-              <div style={{ fontSize: 12, color: '#6b7280' }}>Changes apply to <b>{profile}</b>.</div>
+              <hr style={{ border: 0, borderTop: `1px solid ${themeColors.border}`, margin: '12px 0' }} />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 13, color: themeColors.textMuted, fontWeight: 700 }}>Advanced controls</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => { localStorage.removeItem(statsKeyFor(profile)); setGlyphStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s glyph stats</button>
+                  <button type="button" onClick={() => { handleReshuffle(); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Reshuffle Kannada deck</button>
+                  <button type="button" onClick={() => { setCardIndex(0); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Go to first Kannada card</button>
+                  <button type="button" onClick={() => { localStorage.removeItem(mathStatsKeyFor(profile)); setMathStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s math stats</button>
+                  <button type="button" onClick={() => { localStorage.removeItem(engStatsKeyFor(profile)); setEngStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s English stats</button>
+                  <button type="button" onClick={() => { setEngDeck((d) => shuffleArray(d)); setEngIndex(0); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Shuffle English order</button>
+                  <button type="button" onClick={reshuffleEnglish} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>New 200 English sample</button>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: themeColors.textMuted }}>Changes apply to <b>{profile}</b>.</div>
             </div>
           </form>
         </div>
@@ -1217,8 +1371,6 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
 }
 
 function getMathTimeLimit(q) {
-  if (!q) return 60;
-  if (q.bonus) return 120;
-  if (q.cat === 'zero' || q.cat === 'mul0' || q.cat === 'place' || q.cat === 'face' || q.cat === 'placeName') return 10;
-  return 60;
+  // Unified timer across the app
+  return 120;
 }
