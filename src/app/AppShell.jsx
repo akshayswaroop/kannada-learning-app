@@ -9,6 +9,7 @@ import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS, KAN_TO
 import { scorePlacementDelta, scoreRoundDelta, scoreEnglishDelta, clampMinutes } from "../domain/scoring";
 import { loadTvMinutes as loadTvMin, saveTvMinutes as saveTvMin, loadGlyphStats as loadGlyph, saveGlyphStats as saveGlyph, loadMathStats as loadMath, saveMathStats as saveMath, loadEngStats as loadEng, saveEngStats as saveEng } from "../domain/statsStore";
 import KannadaRound from "../features/kannada/KannadaRound";
+import { useKannadaRound } from "../features/kannada/useKannadaRound";
 
 /*
   Full, self-contained App.jsx for the Kannada flashcards (Arrange mode).
@@ -361,22 +362,9 @@ export default function AppShell() {
     }
   }, [card, deck, direction, cardIndex]);
 
-  const targetScript = direction === 'hi-to-kn' ? 'kn' : 'hi';
-  const promptScript = direction === 'hi-to-kn' ? 'hi' : 'kn';
-  const promptWord = useMemo(() => {
-    if (!card) return '';
-    if (direction === 'hi-to-kn') {
-      if (card.wordHindi && card.wordHindi.length) return card.wordHindi;
-      const sanitizedHi = sanitizeHindi(card.transliterationHi || '');
-      if (sanitizedHi.length) return sanitizedHi;
-      return card.transliterationHi || card.transliteration || '';
-    }
-    return card.wordKannada || '';
-  }, [card, direction]);
-  const targetWord = useMemo(() => {
-    if (!card) return '';
-    return direction === 'hi-to-kn' ? (card.wordKannada || '') : (card.wordHindi || '');
-  }, [card, direction]);
+  const { directionMeta: dirMeta2, targetScript, promptScript, promptWord, targetWord } = useKannadaRound({ card, direction, theme });
+  // prefer hook’s computed meta (same value); keep legacy var for compatibility
+  const _directionMeta = dirMeta2 || directionMeta;
 
   const clusters = useMemo(() => Array.from(targetWord || ""), [targetWord]);
   const colors = useMemo(() => paletteFor(clusters.length), [clusters.length]);
@@ -626,7 +614,8 @@ export default function AppShell() {
       if (wrongIdx !== null) {
         const g = clusters[wrongIdx];
         const showRoman = direction !== 'kn-to-hi';
-        setMicroFeedback(formatGlyphName(g, { showRoman }));
+        const presentInPool = tiles.some((t) => t.g === g);
+        setMicroFeedback(presentInPool ? formatGlyphName(g, { showRoman }) : (direction === 'kn-to-hi' ? 'the next matra/letter' : 'the next glyph'));
       }
     } else {
       setMicroFeedback(null);
