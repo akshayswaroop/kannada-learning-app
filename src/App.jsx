@@ -4,6 +4,7 @@
 // - Mark hinted glyphs as assisted in stats
 // - Live TV-minute incentive awarded/penalized on tile placement
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS } from "./data";
 
 /*
   Full, self-contained App.jsx for the Kannada flashcards (Arrange mode).
@@ -16,64 +17,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
   - Weak-glyphs panel
 */
 
-const BASE_STATS_KEY = "kannada_glyph_stats_v1";
-const PROFILES = ["Mishika", "Akshay"];
-const TV_BASE_KEY = "kannada_tv_minutes_v1";
-
-// Canonical deck (corrected Kannada spellings + Hindi transliterations)
-const RAW_CARDS = [
-  { id: "rama", wordKannada: "ರಾಮ", transliteration: "Rāma", transliterationHi: "राम" },
-  { id: "seeta", wordKannada: "ಸೀತಾ", transliteration: "Sītā", transliterationHi: "सीता" },
-  { id: "lakshmana", wordKannada: "ಲಕ್ಷ್ಮಣ", transliteration: "Lakṣmaṇa", transliterationHi: "लक्ष्मण" },
-  { id: "bharata", wordKannada: "ಭರತ", transliteration: "Bharata", transliterationHi: "भरत" },
-  { id: "shatrughna", wordKannada: "ಶತ್ರುಘ್ನ", transliteration: "Śatrughna", transliterationHi: "शत्रुघ्न" },
-  { id: "dasharatha", wordKannada: "ದಶರಥ", transliteration: "Daśaratha", transliterationHi: "दशरथ" },
-  { id: "kausalyaa", wordKannada: "ಕೌಸಲ್ಯಾ", transliteration: "Kausalyā", transliterationHi: "कौसल्या" },
-  { id: "kaikeyii", wordKannada: "ಕೈಕೇಯೀ", transliteration: "Kaikeyī", transliterationHi: "कैकेयी" },
-  { id: "sumitra", wordKannada: "ಸುಮಿತ್ರ", transliteration: "Sumitrā", transliterationHi: "सुमित्रा" },
-  { id: "janaka", wordKannada: "ಜನಕ", transliteration: "Janaka", transliterationHi: "जनक" },
-  { id: "vishvamitra", wordKannada: "ವಿಶ್ವಾಮಿತ್ರ", transliteration: "Viśvāmitra", transliterationHi: "विश्वामित्र" },
-  { id: "agastya", wordKannada: "ಅಗಸ್ತ್ಯ", transliteration: "Agastya", transliterationHi: "अगस्त्य" },
-  { id: "hanuman", wordKannada: "ಹನುಮಾನ", transliteration: "Hanumān", transliterationHi: "हनुमान" },
-  { id: "sugreeva", wordKannada: "ಸುಗ್ರೀವ", transliteration: "Sugrīva", transliterationHi: "सुग्रीव" },
-  { id: "vali", wordKannada: "ವಾಲೀ", transliteration: "Vālī", transliterationHi: "वाली" },
-  { id: "jambavan", wordKannada: "ಜಾಂಬವಾನ್", transliteration: "Jāmbavān", transliterationHi: "जाम्भवान" },
-  { id: "angada", wordKannada: "ಅಂಗದ", transliteration: "Aṅgada", transliterationHi: "अंगद" },
-  { id: "vibhishana", wordKannada: "ವಿಭೀಷಣ", transliteration: "Vibhīṣaṇa", transliterationHi: "विभीषण" },
-  { id: "ravana", wordKannada: "ರಾವಣ", transliteration: "Rāvaṇa", transliterationHi: "रावण" },
-  { id: "mandodari", wordKannada: "ಮಂದೋದರೀ", transliteration: "Mandodarī", transliterationHi: "मंदोदरी" },
-  { id: "meghanada", wordKannada: "ಮೇಘನಾದ", transliteration: "Meghanāda", transliterationHi: "मेघनाद" },
-  { id: "indrajit", wordKannada: "ಇಂದ್ರಜಿತ್", transliteration: "Indrajit", transliterationHi: "इंद्रजित" },
-  { id: "kumbhakarna", wordKannada: "ಕುಂಭಕರ್ಣ", transliteration: "Kumbhakarṇa", transliterationHi: "कुंभकर्ण" },
-  { id: "shurpanakha", wordKannada: "ಶೂರ್ಪಣಖಾ", transliteration: "Śūrpaṇakhā", transliterationHi: "शूर्पणखा" },
-  { id: "maricha", wordKannada: "ಮಾರೀಚ", transliteration: "Mārīca", transliterationHi: "मारिच" },
-  { id: "tadaka", wordKannada: "ತಾಡಕಾ", transliteration: "Tāḍakā", transliterationHi: "ताड़का" },
-  { id: "ahilya", wordKannada: "ಅಹಿಲ್ಯಾ", transliteration: "Ahalyā", transliterationHi: "अहल्या" },
-  { id: "gautama", wordKannada: "ಗೌತಮ", transliteration: "Gautama", transliterationHi: "गौतम" },
-  { id: "jatayu", wordKannada: "ಜಟಾಯು", transliteration: "Jaṭāyu", transliterationHi: "जटायु" },
-  { id: "sampati", wordKannada: "ಸಂಪಾತೀ", transliteration: "Sampātī", transliterationHi: "संपाती" },
-  { id: "nala", wordKannada: "ನಲ", transliteration: "Nala", transliterationHi: "नल" },
-  { id: "nila", wordKannada: "ನೀಲ", transliteration: "Nīla", transliterationHi: "नील" },
-  { id: "lava", wordKannada: "ಲವ", transliteration: "Lava", transliterationHi: "लव" },
-  { id: "kusha", wordKannada: "ಕುಶ", transliteration: "Kusha", transliterationHi: "कुश" },
-  { id: "urmila", wordKannada: "ಉರ್ಮಿಲಾ", transliteration: "Urmila", transliterationHi: "उर्मिला" },
-  { id: "mandavi", wordKannada: "ಮಾಂಡವೀ", transliteration: "Mandavi", transliterationHi: "मांडवी" },
-  { id: "shrutakirti", wordKannada: "ಶ್ರುತಕೀರ್ತಿ", transliteration: "Shrutakirti", transliterationHi: "श्रुतकीर्ति" },
-  { id: "vashistha", wordKannada: "ವಶಿಷ್ಠ", transliteration: "Vashistha", transliterationHi: "वशिष्ठ" },
-  { id: "vishrava", wordKannada: "ವಿಶ್ರವ", transliteration: "Vishrava", transliterationHi: "विश्रव" },
-  { id: "narada", wordKannada: "ನಾರದ", transliteration: "Narada", transliterationHi: "नारद" },
-  { id: "valmiki", wordKannada: "ವಾಲ್ಮೀಕಿ", transliteration: "Valmiki", transliterationHi: "वाल्मीकि" },
-  { id: "garuda", wordKannada: "ಗರುಡ", transliteration: "Garuda", transliterationHi: "गरुड़" },
-  { id: "khara", wordKannada: "ಖರ", transliteration: "Khara", transliterationHi: "खर" },
-  { id: "dushana", wordKannada: "ದೂಷಣ", transliteration: "Dushana", transliterationHi: "दूषण" },
-  { id: "trishira", wordKannada: "ತ್ರಿಶಿರಾ", transliteration: "Trishira", transliterationHi: "त्रिशिरा" },
-  { id: "akampana", wordKannada: "ಅಕಂಪನ", transliteration: "Akampana", transliterationHi: "अकंपन" },
-  { id: "atikaya", wordKannada: "ಅतಿಕಾಯ", transliteration: "Atikaya", transliterationHi: "अतिकाय" },
-  { id: "prahasta", wordKannada: "ಪ್ರಹಸ್ತ", transliteration: "Prahasta", transliterationHi: "प्रहस्त" },
-  { id: "kabandha", wordKannada: "ಕಬಂಧ", transliteration: "Kabandha", transliterationHi: "कबन्ध" },
-  { id: "mandhara", wordKannada: "ಮಂಥರಾ", transliteration: "Mandhara", transliterationHi: "मंथरा" },
-  { id: "tara", wordKannada: "ತಾರಾ", transliteration: "Tara", transliterationHi: "तारा" },
-];
+// Use dataset from src/data.js (contains the expanded card list)
 
 // Minimal Kannada -> Devanagari mapping for common kernel letters.
 // This is a starting mapping; add more mappings if you want broader coverage.
@@ -148,18 +92,55 @@ function saveGlyphStats(profile, s) {
   } catch (e) {}
 }
 
+// Math mode stats (per multiplication fact)
+const MATH_STATS_BASE_KEY = `${BASE_STATS_KEY}_math_v1`;
+function mathStatsKeyFor(profile) {
+  return `${MATH_STATS_BASE_KEY}::${profile}`;
+}
+function loadMathStats(profile) {
+  try {
+    const raw = localStorage.getItem(mathStatsKeyFor(profile));
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveMathStats(profile, s) {
+  try {
+    localStorage.setItem(mathStatsKeyFor(profile), JSON.stringify(s));
+  } catch (e) {}
+}
+
+// English reading stats (per word)
+const ENG_STATS_BASE_KEY = `${BASE_STATS_KEY}_eng_v1`;
+function engStatsKeyFor(profile) {
+  return `${ENG_STATS_BASE_KEY}::${profile}`;
+}
+function loadEngStats(profile) {
+  try {
+    const raw = localStorage.getItem(engStatsKeyFor(profile));
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+function saveEngStats(profile, s) {
+  try {
+    localStorage.setItem(engStatsKeyFor(profile), JSON.stringify(s));
+  } catch (e) {}
+}
+
 export default function App() {
   const [profile, setProfile] = useState(PROFILES[0]);
-  const [mode, setMode] = useState("arrange"); // 'arrange' | 'mcq'
+  // Arrange-only app: randomize by default (no UI toggle)
+  const [randomize] = useState(true);
+  // App mode: 'kannada' | 'math' | 'english'
+  const [mode, setMode] = useState('kannada');
 
   // build sanitized deck on first render
   const [deck, setDeck] = useState(() => {
-    const sanitized = RAW_CARDS.map((card) => {
-      const s = sanitizeKannada(card.wordKannada);
-      if (s !== card.wordKannada) console.warn("Sanitized Kannada for:", card.id, { original: card.wordKannada, sanitized: s });
-      return { ...card, wordKannada: s };
-    });
-    return shuffleArray(sanitized);
+    const sanitized = RAW_CARDS.map((card) => ({ ...card, wordKannada: sanitizeKannada(card.wordKannada) }));
+    return randomize ? shuffleArray(sanitized) : sanitized;
   });
 
   const [cardIndex, setCardIndex] = useState(0);
@@ -174,8 +155,11 @@ export default function App() {
   const [hasAttempted, setHasAttempted] = useState(false);
   const [hintVisible, setHintVisible] = useState(false);
   const [result, setResult] = useState(null);
+  const [lastCorrectWord, setLastCorrectWord] = useState(null);
 
   const [glyphStats, setGlyphStats] = useState(() => loadGlyphStats(PROFILES[0]));
+  const [mathStats, setMathStats] = useState(() => loadMathStats(PROFILES[0]));
+  const [engStats, setEngStats] = useState(() => loadEngStats(PROFILES[0]));
   const [tvMinutes, setTvMinutes] = useState(() => loadTvMinutes(PROFILES[0]));
   // track which slot indices have already been scored this round to avoid double-counting
   const [tvMinutesLock, setTvMinutesLock] = useState(() => new Set());
@@ -183,6 +167,12 @@ export default function App() {
   // controlled "More" dropdown
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef(null);
+
+  // parent award modal state
+  const [showParent, setShowParent] = useState(false);
+  const [parentPass, setParentPass] = useState("");
+  const [parentMinutes, setParentMinutes] = useState("");
+  const [parentError, setParentError] = useState("");
 
   // close "More" menu when clicking outside
   useEffect(() => {
@@ -203,8 +193,35 @@ export default function App() {
 
   useEffect(() => {
     setGlyphStats(loadGlyphStats(profile));
+    setMathStats(loadMathStats(profile));
+    setEngStats(loadEngStats(profile));
     setTvMinutes(loadTvMinutes(profile));
   }, [profile]);
+
+  // no toggle: randomize is true by default — build deck once on mount
+  useEffect(() => {
+    const sanitized = RAW_CARDS.map((card) => ({ ...card, wordKannada: sanitizeKannada(card.wordKannada) }));
+    setDeck(shuffleArray(sanitized));
+    setCardIndex(0);
+  }, []);
+
+  // Unlock audio context on first interaction (required on iOS/Safari)
+  useEffect(() => {
+    function unlock() {
+      const ctx = getAudioCtx();
+      if (ctx && ctx.state === 'suspended') {
+        ctx.resume().catch(() => {});
+      }
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    }
+    document.addEventListener('pointerdown', unlock);
+    document.addEventListener('keydown', unlock);
+    return () => {
+      document.removeEventListener('pointerdown', unlock);
+      document.removeEventListener('keydown', unlock);
+    };
+  }, []);
 
   // prepare tiles & slots whenever card changes
   useEffect(() => {
@@ -225,6 +242,7 @@ export default function App() {
     setTvMinutesLock(new Set());
     setHintVisible(false);
     setResult(null);
+    setLastCorrectWord(null);
   }, [cardIndex, card.wordKannada]);
 
   // drag handlers
@@ -258,8 +276,8 @@ export default function App() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(slotIndex)) return prev; // already scored
       const correctGlyph = clusters[slotIndex];
-      const delta = tile.g === correctGlyph ? 1 : -1; // minutes
-      const next = prev + delta;
+      const delta = tile.g === correctGlyph ? 1 : -3; // +1 for correct, -3 for incorrect
+      const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, slotIndex]));
       return next;
@@ -285,8 +303,8 @@ export default function App() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(placedIdx)) return prev;
       const correctGlyph = clusters[placedIdx];
-      const delta = tile.g === correctGlyph ? 1 : -1;
-      const next = prev + delta;
+      const delta = tile.g === correctGlyph ? 1 : -3; // +1 correct, -3 incorrect
+      const next = Math.max(0, prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, placedIdx]));
       return next;
@@ -325,7 +343,9 @@ export default function App() {
 
     // clear hinted indices for the next round
     setHintedIndices(new Set());
-    setResult(assembled === expected ? "correct" : "incorrect");
+    const ok = assembled === expected;
+    setResult(ok ? "correct" : "incorrect");
+    setLastCorrectWord(ok ? null : expected);
   }
 
   function handleReset() {
@@ -335,6 +355,7 @@ export default function App() {
     setResult(null);
     setHintVisible(false);
     setHasAttempted(false);
+    setLastCorrectWord(null);
   }
 
   function handleNext() {
@@ -390,7 +411,484 @@ export default function App() {
     return "#ecfdf5";
   }
 
+  // parent award handler
+  function awardMinutesViaParent(e) {
+    e.preventDefault();
+    const PASSCODE = "282928";
+    if (parentPass !== PASSCODE) {
+      setParentError("Invalid passcode");
+      return;
+    }
+    const m = Number(parentMinutes);
+    if (!Number.isFinite(m) || m <= 0) {
+      setParentError("Enter minutes > 0");
+      return;
+    }
+    setTvMinutes((prev) => {
+      const next = Math.max(0, prev + m);
+      saveTvMinutes(profile, next);
+      return next;
+    });
+    setParentError("");
+    setParentPass("");
+    setParentMinutes("");
+    setShowParent(false);
+  }
+
+  function resetAllTvMinutesViaParent() {
+    const PASSCODE = "282928";
+    if (parentPass !== PASSCODE) {
+      setParentError("Invalid passcode");
+      return;
+    }
+    try {
+      PROFILES.forEach((p) => saveTvMinutes(p, 0));
+    } catch (e) {}
+    setTvMinutes(0);
+    setParentError("");
+    setParentPass("");
+    setParentMinutes("");
+    setShowParent(false);
+  }
+
+  function quickAdjustTvMinutes(delta) {
+    const PASSCODE = "282928";
+    if (parentPass !== PASSCODE) {
+      setParentError("Invalid passcode");
+      return;
+    }
+    setTvMinutes((prev) => {
+      const next = Math.max(0, prev + delta);
+      saveTvMinutes(profile, next);
+      return next;
+    });
+    setParentError("");
+  }
+
+  // Math mode state and helpers
+  function allMathProblems() {
+    const out = [];
+    // Multiplication facts 3..9 × 2..10 (avoid trivial ×1)
+    for (let a = 3; a <= 9; a++) {
+      for (let b = 2; b <= 10; b++) out.push({ a, b, op: '×', cat: 'mul' });
+    }
+    // Replace trivial ×1 with larger patterns
+    out.push({ a: 100, b: 1, op: '×', cat: 'mul' });
+    out.push({ a: 10000, b: 1, op: '×', cat: 'mul' });
+    // Tens by digit emphasis (e.g., 20×2, 30×3, generalize tens × 2..9)
+    for (let t = 10; t <= 90; t += 10) {
+      for (let d = 2; d <= 9; d++) out.push({ a: t, b: d, op: '×', cat: 'tens' });
+    }
+    // Hundreds by digit (e.g., 100×2..9, 200×2..9, ..., 900×2..9)
+    for (let h = 100; h <= 900; h += 100) {
+      for (let d = 2; d <= 9; d++) out.push({ a: h, b: d, op: '×', cat: 'hundreds' });
+    }
+    // Multiplication by zero focus: 10..99 × 0
+    for (let a = 10; a <= 99; a++) out.push({ a, b: 0, op: '×', cat: 'mul0' });
+    // Addition: 10..99 + 1..20
+    for (let a = 10; a <= 99; a++) {
+      for (let b = 1; b <= 20; b++) out.push({ a, b, op: '+', cat: 'add' });
+    }
+    // Subtraction: 20..99 − 1..20 (non-negative)
+    for (let a = 20; a <= 99; a++) {
+      for (let b = 1; b <= 20; b++) if (a - b >= 0) out.push({ a, b, op: '-', cat: 'sub' });
+    }
+    // Zero with + and - emphasis: a+0, a-0 for 10..99
+    for (let a = 10; a <= 99; a++) {
+      out.push({ a, b: 0, op: '+', cat: 'zero' });
+      out.push({ a, b: 0, op: '-', cat: 'zero' });
+    }
+    // Place/Face value problems for 3-digit numbers
+    for (let n = 100; n <= 999; n += 37) {
+      for (let pos = 0; pos < 3; pos++) {
+        out.push({ op: 'place', number: n, pos, cat: 'place' });
+        out.push({ op: 'face', number: n, pos, cat: 'face' });
+        out.push({ op: 'placeName', number: n, pos, cat: 'placeName' });
+      }
+    }
+    // Bonus: 1-digit × 3-digit with high stakes
+    const bonusBs = [123, 234, 345, 456, 567, 678, 789, 808, 909];
+    for (let a = 2; a <= 9; a++) {
+      for (const b of bonusBs) {
+        out.push({ a, b, op: '×', bonus: true, cat: 'bonus' });
+      }
+    }
+    return out;
+  }
+
+  function mathKey(q) {
+    if (q.op === 'place') return `PV:${q.number}:${q.pos}`;
+    if (q.op === 'face') return `FV:${q.number}:${q.pos}`;
+    return `${q.a}${q.op}${q.b}`;
+  }
+  function correctAnswer(q) {
+    if (q.op === '+') return q.a + q.b;
+    if (q.op === '-') return q.a - q.b;
+    if (q.op === '×') return q.a * q.b;
+    if (q.op === 'placeName') {
+      return q.pos === 0 ? 'ones' : q.pos === 1 ? 'tens' : 'hundreds';
+    }
+    const digits = String(q.number);
+    const idx = digits.length - 1 - q.pos; // 0 -> ones, 1 -> tens, 2 -> hundreds
+    const d = Number(digits[idx]);
+    if (q.op === 'face') return d;
+    // place value numeric
+    return d * Math.pow(10, q.pos);
+  }
+
+function pickNextMath(stats, prevKey = null, opts = {}) {
+    const { bonusFrequency = 0.15 } = opts;
+    const facts = allMathProblems();
+    const practice = [];
+    const untested = [];
+    const mastered = [];
+    for (const f of facts) {
+      const key = f.op === 'place' || f.op === 'face' || f.op === 'placeName' ? `${f.op}:${f.number}:${f.pos}` : `${f.a}${f.op}${f.b}`;
+      const s = stats[key] || { attempts: 0, correct: 0 };
+      const attempts = s.attempts || 0;
+      const acc = attempts ? (s.correct || 0) / attempts : 0;
+      if (attempts === 0) untested.push(f);
+      else if (attempts >= 3 && acc >= 0.95) mastered.push(f);
+      else practice.push(f);
+    }
+    // Prefer a blend of practice + untested so new facts still appear
+    let basePool = [...practice, ...untested];
+    if (!basePool.length) basePool = [...mastered];
+    if (!basePool.length) basePool = [...facts];
+    // Avoid repeating the immediate previous problem
+    if (prevKey && basePool.length > 1) basePool = basePool.filter((f) => mathKey(f) !== prevKey);
+
+    // Merge categories into operator groups to avoid bias toward multiplication
+    const groups = {
+      mul: [], // basic/tens/hundreds
+      add: [],
+      sub: [],
+      zero: [], // +0, -0, ×0
+      place: [],
+      face: [],
+      placeName: [],
+      bonus: []
+    };
+    for (const f of basePool) {
+      if (f.bonus) groups.bonus.push(f);
+      else if (f.op === '×') {
+        if (f.cat === 'mul' || f.cat === 'tens' || f.cat === 'hundreds') groups.mul.push(f);
+        else if (f.cat === 'mul0') groups.zero.push(f);
+        else groups.mul.push(f);
+      } else if (f.op === '+') {
+        if (f.b === 0) groups.zero.push(f); else groups.add.push(f);
+      } else if (f.op === '-') {
+        if (f.b === 0) groups.zero.push(f); else groups.sub.push(f);
+      } else if (f.op === 'place') groups.place.push(f);
+      else if (f.op === 'face') groups.face.push(f);
+      else if (f.op === 'placeName') groups.placeName.push(f);
+    }
+
+    // Weighted sampling across groups (only among non-empty groups)
+    const weights = {
+      mul: 0.28,
+      add: 0.2,
+      sub: 0.2,
+      zero: 0.15,
+      place: 0.07,
+      face: 0.06,
+      placeName: 0.04
+    };
+
+    // Bonus override
+    if (groups.bonus.length && Math.random() < bonusFrequency) {
+      const arr = groups.bonus;
+      return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    const nonEmpty = Object.keys(groups).filter((g) => g !== 'bonus' && groups[g].length);
+    // Normalize weights across available groups
+    const total = nonEmpty.reduce((sum, g) => sum + (weights[g] || 0), 0) || 1;
+    let r = Math.random() * total;
+    let chosen = nonEmpty[0];
+    for (const g of nonEmpty) {
+      const w = (weights[g] || 0);
+      if (r <= w) { chosen = g; break; }
+      r -= w;
+    }
+    let pool = groups[chosen] && groups[chosen].length ? groups[chosen] : basePool;
+    if (!pool.length) pool = basePool;
+    let pick = pool[Math.floor(Math.random() * pool.length)] || basePool[0] || facts[0];
+    if (prevKey && mathKey(pick) === prevKey) {
+      const alt = basePool.filter((f) => mathKey(f) !== prevKey);
+      if (alt.length) pick = alt[Math.floor(Math.random() * alt.length)];
+      else {
+        const anyAlt = facts.filter((f) => mathKey(f) !== prevKey);
+        if (anyAlt.length) pick = anyAlt[Math.floor(Math.random() * anyAlt.length)];
+      }
+    }
+    return pick;
+  }
+
+  const [mathQ, setMathQ] = useState(() => pickNextMath(loadMathStats(PROFILES[0]) || {}, null));
+  const [bonusReward, setBonusReward] = useState(20);
+  const [bonusPenalty, setBonusPenalty] = useState(20);
+  const [bonusFrequency, setBonusFrequency] = useState(0.15); // 0..1
+  const [answer, setAnswer] = useState("");
+  const answerRef = useRef(null);
+  // per-question timer state
+  const [timeLeft, setTimeLeft] = useState(60);
+  const [currentTimeLimit, setCurrentTimeLimit] = useState(60);
+  const [timedOut, setTimedOut] = useState(false);
+  const timerRef = useRef(null);
+  const timeLimitRef = useRef(60);
+  const audioCtxRef = useRef(null);
+
+  function getAudioCtx() {
+    if (typeof window === 'undefined') return null;
+    if (!audioCtxRef.current) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return null;
+      audioCtxRef.current = new AudioCtx();
+    }
+    return audioCtxRef.current;
+  }
+
+  function playBeep(frequency, duration = 0.18) {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    const now = ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.12, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    osc.start(now);
+    osc.stop(now + duration);
+  }
+  function nextMathQuestion() {
+    const prevKey = mathKey(mathQ);
+    setMathQ(pickNextMath(mathStats, prevKey, { bonusFrequency }));
+    setAnswer("");
+    setResult(null);
+  }
+  function submitMath() {
+    const correctAns = correctAnswer(mathQ);
+    let isCorrect = false;
+    if (mathQ.op === 'placeName') {
+      const trimmed = String(answer || '').trim().toLowerCase();
+      if (!trimmed) return; // ignore submit when blank
+      isCorrect = trimmed === String(correctAns).toLowerCase();
+    } else {
+      const valTrim = String(answer || '').trim();
+      if (valTrim === '') return;
+      const valNum = Number(valTrim);
+      if (!Number.isFinite(valNum)) return;
+      isCorrect = valNum === correctAns;
+    }
+    // update per-fact stats
+    const key = mathKey(mathQ);
+    const updated = { ...mathStats };
+    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
+    stat.attempts = (stat.attempts || 0) + 1;
+    if (isCorrect) stat.correct = (stat.correct || 0) + 1;
+    updated[key] = stat;
+    setMathStats(updated);
+    saveMathStats(profile, updated);
+
+    // scoring: normal +2/-10, bonus adjustable
+    setTvMinutes((prev) => {
+      const delta = mathQ.bonus ? (isCorrect ? bonusReward : -bonusPenalty) : (isCorrect ? 2 : -10);
+      const next = Math.max(0, prev + delta);
+      saveTvMinutes(profile, next);
+      return next;
+    });
+
+    setResult(isCorrect ? 'correct' : 'incorrect');
+  }
+
+  // Timeout handlers
+  function handleMathTimeout() {
+    if (result) return; // already answered
+    // mark incorrect without user input
+    const key = mathKey(mathQ);
+    const updated = { ...mathStats };
+    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
+    stat.attempts = (stat.attempts || 0) + 1;
+    updated[key] = stat;
+    setMathStats(updated);
+    saveMathStats(profile, updated);
+
+    setTvMinutes((prev) => {
+      const delta = mathQ.bonus ? -bonusPenalty : -10;
+      const next = Math.max(0, prev + delta);
+      saveTvMinutes(profile, next);
+      return next;
+    });
+    setTimedOut(true);
+    setResult('incorrect');
+    setAnswer("");
+  }
+
+  function handleEnglishTimeout() {
+    if (result) return;
+    setTimedOut(true);
+    // Record as incorrect
+    markEnglish(false);
+    setAnswer("");
+  }
+  // If user switches to Math mode mid-session, seed a sensible question once
+  useEffect(() => {
+    if (mode === 'math') {
+      setMathQ((q) => pickNextMath(mathStats, mathKey(q), { bonusFrequency }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, bonusFrequency]);
+  const weakFacts = useMemo(() => {
+    return Object.entries(mathStats)
+      .map(([k, s]) => ({ fact: k, attempts: s.attempts || 0, correct: s.correct || 0, accuracy: s.attempts ? (s.correct || 0) / s.attempts : 1 }))
+      .filter((x) => x.attempts > 0)
+      .sort((a, b) => a.accuracy - b.accuracy)
+      .slice(0, 12);
+  }, [mathStats]);
+
+  // Math form handler: Enter submits; if already answered, Enter goes to Next
+  function handleMathFormSubmit(e) {
+    e.preventDefault();
+    if (mode !== 'math') return;
+    if (result) {
+      if (!String(answer || '').trim()) return;
+      nextMathQuestion();
+    } else {
+      submitMath();
+    }
+  }
+
+
+  // Global Enter handler for Kannada mode: Enter submits; if already correct, Enter goes to Next
+  useEffect(() => {
+    function onKeyDown(e) {
+      if (e.key !== 'Enter') return;
+      // Ignore when typing in inputs or modals
+      const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) return;
+      if (showParent) return;
+      if (mode !== 'kannada') return;
+      e.preventDefault();
+      if (!result) handleSubmit();
+      else if (result === 'correct') handleNext();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [mode, result, showParent, slots, tiles]);
+
+  // Focus math answer input when math question changes or mode switches
+  useEffect(() => {
+    if (mode === 'math' && answerRef.current) {
+      try {
+        answerRef.current.focus();
+        answerRef.current.select();
+      } catch {}
+    }
+  }, [mode, mathQ]);
+
+  // English reading mode state
+  const [engDeck, setEngDeck] = useState(() => shuffleArray(ENGLISH_WORDS).slice(0, 200));
+  const [engIndex, setEngIndex] = useState(0);
+  const engWord = useMemo(() => engDeck[engIndex] || engDeck[0] || ENGLISH_WORDS[0], [engDeck, engIndex]);
+  function markEnglish(correct) {
+    const key = engWord;
+    const updated = { ...engStats };
+    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
+    stat.attempts = (stat.attempts || 0) + 1;
+    if (correct) stat.correct = (stat.correct || 0) + 1;
+    updated[key] = stat;
+    setEngStats(updated);
+    saveEngStats(profile, updated);
+    // scoring: reward reading, small penalty otherwise
+    setTvMinutes((prev) => {
+      const delta = correct ? 2 : -1;
+      const next = Math.max(0, prev + delta);
+      saveTvMinutes(profile, next);
+      return next;
+    });
+    setResult(correct ? 'correct' : 'incorrect');
+  }
+  function nextEnglish() {
+    setEngIndex((i) => (i + 1) % engDeck.length);
+    setResult(null);
+  }
+  function reshuffleEnglish() {
+    setEngDeck(shuffleArray(ENGLISH_WORDS).slice(0, 200));
+    setEngIndex(0);
+    setResult(null);
+  }
+  const weakEnglish = useMemo(() => {
+    return Object.entries(engStats)
+      .map(([w, s]) => ({ word: w, attempts: s.attempts || 0, correct: s.correct || 0, accuracy: s.attempts ? (s.correct || 0) / s.attempts : 1 }))
+      .filter((x) => x.attempts > 0)
+      .sort((a, b) => a.accuracy - b.accuracy)
+      .slice(0, 12);
+  }, [engStats]);
+
+  // Start/Reset 15s timer for Math and English
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimedOut(false);
+    let limit = 60;
+    if (mode === 'math') {
+      limit = getMathTimeLimit(mathQ);
+    } else if (mode === 'english') {
+      limit = 60;
+    }
+    timeLimitRef.current = limit;
+    setCurrentTimeLimit(limit);
+    if (result) return;
+    if (mode !== 'math' && mode !== 'english') return;
+    setTimeLeft(limit);
+    timerRef.current = setInterval(() => {
+      setTimeLeft((t) => {
+        if (t <= 1) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+          if (mode === 'math') handleMathTimeout();
+          else if (mode === 'english') handleEnglishTimeout();
+          return 0;
+        }
+        const next = t - 1;
+        if (next > 0 && next <= Math.min(5, timeLimitRef.current)) playBeep(next <= 2 ? 1400 : 950, 0.12);
+        return next;
+      });
+    }, 1000);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [mode, mathQ, engIndex]);
+
+  // Stop timer once result is shown
+  useEffect(() => {
+    if (result && timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, [result]);
+
+  // Audio cues for outcomes
+  useEffect(() => {
+    if (!result) return;
+    if (result === 'correct') playBeep(1568, 0.25);
+    else playBeep(330, 0.3);
+  }, [result]);
+
   return (
+    <>
+    <style>{`
+      @keyframes pulseBadge {0%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,.45);} 70%{transform:scale(1.03); box-shadow:0 0 0 12px rgba(245,158,11,0);} 100%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,0);}}
+      .bonus-badge { animation: pulseBadge 1.2s infinite; }
+    `}</style>
     <div style={{ minHeight: "100vh", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: "linear-gradient(180deg,#f6f8ff 0%, #fff 60%)" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -410,19 +908,31 @@ export default function App() {
               </select>
             </div>
             <div>
-              <label style={{ marginRight: 8, color: "#6b7280", fontWeight: 700 }}>Mode:</label>
-              <select value={mode} onChange={(e) => setMode(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8 }}>
-                <option value="arrange">Arrange</option>
-                <option value="mcq">Multiple choice</option>
+              <label style={{ margin: '0 8px 0 12px', color: '#6b7280', fontWeight: 700 }}>Mode:</label>
+              <select value={mode} onChange={(e) => { setMode(e.target.value); setResult(null); }} style={{ padding: "6px 10px", borderRadius: 8 }}>
+                <option value="kannada">Kannada</option>
+                <option value="math">Math</option>
+                <option value="english">English</option>
               </select>
             </div>
-            <div style={{ background: "#f3f4f6", padding: "6px 10px", borderRadius: 8, fontWeight: 700 }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
+            {/* Arrange-only: mode and randomize are fixed (random by default) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ background: "#f3f4f6", padding: "6px 10px", borderRadius: 8, fontWeight: 700 }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
+              <button onClick={() => { setShowParent(true); setParentError(""); }} title="Parent controls" style={{ padding: '6px 10px', border: '1px solid #e5e7eb', background: 'white', borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>Parent</button>
+            </div>
           </div>
-          <div style={{ color: "#6b7280" }}>Card {cardIndex + 1} / {deck.length}</div>
+          {mode === 'kannada' ? (
+            <div style={{ color: "#6b7280" }}>Card {cardIndex + 1} / {deck.length}</div>
+          ) : mode === 'math' ? (
+            <div style={{ color: "#6b7280" }}>Math practice</div>
+          ) : (
+            <div style={{ color: "#6b7280" }}>Word {engIndex + 1} / {engDeck.length}</div>
+          )}
         </div>
 
         <div style={{ background: "white", padding: 20, borderRadius: 12, boxShadow: "0 12px 40px rgba(12,20,40,0.06)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          {mode === 'kannada' ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <div>
               <div style={{ fontSize: 34, fontWeight: 900 }}>{card.transliterationHi || card.transliteration}</div>
             </div>
@@ -431,11 +941,55 @@ export default function App() {
               <div style={{ fontSize: 18, fontWeight: 700 }}>{card.transliterationHi ? "" : card.transliteration}</div>
             </div>
           </div>
+          ) : mode === 'math' ? (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 32, color: '#4b5563', display: 'flex', alignItems: 'center', gap: 12, fontWeight: 700 }}>
+                Solve the problem
+                {mathQ.bonus && (
+                  <span className="bonus-badge" style={{ padding: '4px 8px', background: '#fef3c7', color: '#92400e', borderRadius: 9999, fontSize: 12, fontWeight: 800 }}>Bonus: +20 / −20</span>
+                )}
+              </div>
+              {mathQ.op === 'place' || mathQ.op === 'face' ? (
+                <div style={{ fontSize: 42, fontWeight: 900 }}>
+                  {mathQ.op === 'place' ? 'Place value of digit' : 'Face value of digit'}{' '}
+                  <span style={{ padding: '2px 8px', background: '#eef2ff', borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
+                  {' '}in {mathQ.number}
+                </div>
+              ) : mathQ.op === 'placeName' ? (
+                <div style={{ fontSize: 42, fontWeight: 900 }}>
+                  Which place is{' '}
+                  <span style={{ padding: '2px 8px', background: '#eef2ff', borderRadius: 8 }}>{String(mathQ.number).charAt(String(mathQ.number).length - 1 - mathQ.pos)}</span>
+                  {' '}in {mathQ.number}?
+                </div>
+              ) : (
+                <div style={{ fontSize: 56, fontWeight: 900, letterSpacing: 1 }}>{mathQ.a} {mathQ.op} {mathQ.b}</div>
+              )}
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 13, color: '#6b7280' }}>Enter the answer</div>
+              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timeLeft <= 3 ? '#fee2e2' : (timeLeft <= 7 ? '#fef3c7' : '#eef2ff'), color: timeLeft <= 3 ? '#991b1b' : '#374151' }}>⏱ {timeLeft}s</div>
+            </div>
+          </div>
+          ) : (
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 32, color: '#4b5563', fontWeight: 700 }}>Read the word</div>
+              <div style={{ fontSize: 60, fontWeight: 900, letterSpacing: 1 }}>{engWord}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 13, color: '#6b7280' }}>Tap if read or not</div>
+              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timeLeft <= 3 ? '#fee2e2' : (timeLeft <= 7 ? '#fef3c7' : '#eef2ff'), color: timeLeft <= 3 ? '#991b1b' : '#374151' }}>⏱ {timeLeft}s</div>
+            </div>
+          </div>
+          )}
 
-          {mode === "arrange" ? (
-            <div style={{ display: "flex", gap: 18 }}>
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 18, alignItems: 'start' }}>
               <div style={{ flex: 1 }}>
 
+              {mode === 'kannada' ? (
+              <>
               {/* Tile pool */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -463,12 +1017,12 @@ export default function App() {
               </div>
 
               {/* Controls */}
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <button onClick={handleSubmit} style={{ padding: "10px 18px", background: "#10b981", color: "white", border: "none", borderRadius: 10, cursor: "pointer", fontWeight: 800 }}>Submit</button>
-                <button onClick={() => showHint()} disabled={!hasAttempted || hintsUsed >= 2} title={!hasAttempted ? "Place at least one tile first to enable hint" : hintsUsed >= 2 ? "No hints remaining for this word" : `Hints used: ${hintsUsed}/2`} style={{ padding: "10px 14px", background: "#fef3c7", border: "none", borderRadius: 10, cursor: !hasAttempted || hintsUsed >= 2 ? "not-allowed" : "pointer", fontWeight: 700, opacity: !hasAttempted ? 0.6 : 1 }}>{`Hint (${2 - hintsUsed} left)`}</button>
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <button onClick={handleSubmit} style={{ padding: "12px 22px", background: "#10b981", color: "white", border: "none", borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize: 18 }}>Submit</button>
+                <button onClick={() => showHint()} disabled={!hasAttempted || hintsUsed >= 2} title={!hasAttempted ? "Place at least one tile first to enable hint" : hintsUsed >= 2 ? "No hints remaining for this word" : `Hints used: ${hintsUsed}/2`} style={{ padding: "12px 20px", background: "#fef3c7", border: "none", borderRadius: 14, cursor: !hasAttempted || hintsUsed >= 2 ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 18, opacity: !hasAttempted ? 0.6 : 1 }}>{`Hint (${2 - hintsUsed} left)`}</button>
 
                 <div style={{ position: "relative" }} ref={moreRef}>
-                  <button onClick={() => setShowMore((s) => !s)} aria-expanded={showMore} style={{ listStyle: "none", padding: "10px 14px", borderRadius: 10, background: "#eef2ff", cursor: "pointer", fontWeight: 700 }}>More ▾</button>
+                  <button onClick={() => setShowMore((s) => !s)} aria-expanded={showMore} style={{ listStyle: "none", padding: "12px 20px", borderRadius: 14, background: "#eef2ff", cursor: "pointer", fontWeight: 700, fontSize: 18 }}>More ▾</button>
                   {showMore && (
                     <div style={{ position: "absolute", right: 0, marginTop: 8, padding: 12, background: "white", borderRadius: 10, boxShadow: "0 10px 40px rgba(12,20,40,0.08)", minWidth: 160 }}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -479,79 +1033,61 @@ export default function App() {
                   )}
                 </div>
 
-                {result === "correct" && <button onClick={handleNext} style={{ padding: "10px 16px", background: "#bfdbfe", borderRadius: 10, border: "none", cursor: "pointer", fontWeight: 800 }}>Next</button>}
+                {result === "correct" && <button onClick={handleNext} style={{ padding: "12px 22px", background: "#bfdbfe", borderRadius: 14, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 18 }}>Next</button>}
                 {result === "correct" && <div style={{ marginLeft: 6, color: "#166534", fontWeight: 800 }}>✅ Correct</div>}
-                {result === "incorrect" && <div style={{ marginLeft: 6, color: "#b91c1c", fontWeight: 800 }}>❌ Incorrect — try again</div>}
-              </div>
-              </div>
-
-              {/* Right panel */}
-              <aside style={{ width: 320 }}>
-              <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
-                <h3 style={{ marginTop: 0 }}>Weak glyphs</h3>
-                <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy glyphs for {profile}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                  {weakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — play a few rounds to collect data.</div>}
-                  {weakGlyphs.map((w) => (
-                    <div key={w.glyph} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                      <div style={{ fontSize: 28 }}>{w.glyph}</div>
-                      <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                      <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: 12 }}>
-                  <button onClick={() => { localStorage.removeItem(statsKeyFor(profile)); setGlyphStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s glyph stats</button>
-                </div>
-
-                <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
-                  <div style={{ marginBottom: 8, fontWeight: 700 }}>Deck controls</div>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => { setDeck((d) => shuffleArray(d)); setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Shuffle order</button>
-                    <button onClick={() => { setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Go to first</button>
+                {result === "incorrect" && (
+                  <div style={{ marginLeft: 6, color: "#b91c1c", fontWeight: 800 }}>
+                    ❌ Incorrect — answer: {lastCorrectWord || clusters.join("")}
                   </div>
-                </div>
-
+                )}
               </div>
-              </aside>
-            </div>
-          ) : (
-            // MCQ mode: show Kannada glyph and multiple Hindi options
-            <div style={{ display: "flex", gap: 18 }}>
-              <div style={{ flex: 1 }}>
-                <MCQQuestion
-                  card={card}
-                  deck={deck}
-                  onAnswer={(isCorrect, glyph) => {
-                    // immediate scoring: tv minutes and glyph stats
-                    setTvMinutes((prev) => {
-                      const delta = isCorrect ? 1 : -1;
-                      const next = prev + delta;
-                      saveTvMinutes(profile, next);
-                      return next;
-                    });
-
-                    // update per-glyph stats for the Kannada glyph
-                    const updated = { ...glyphStats };
-                    const key = glyph;
-                    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
-                    stat.attempts = (stat.attempts || 0) + 1;
-                    if (isCorrect) stat.correct = (stat.correct || 0) + 1;
-                    updated[key] = stat;
-                    setGlyphStats(updated);
-                    saveGlyphStats(profile, updated);
-
-                    // advance to next card
-                    setCardIndex((ci) => (ci + 1) % deck.length);
-                  }}
-                />
-
+              </>
+              ) : mode === 'math' ? (
+                <>
+                <form onSubmit={handleMathFormSubmit} style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+                  {(mathQ.op === '+' || mathQ.op === '-' || mathQ.op === '×' || mathQ.op === 'place' || mathQ.op === 'face') && (
+                    <input ref={answerRef} inputMode="numeric" pattern="[0-9]*" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="Answer" style={{ padding: '16px 20px', border: '2px solid #d1d5db', borderRadius: 14, fontSize: 28, width: 220, fontWeight: 600 }} />
+                  )}
+                  {mathQ.op === 'placeName' && (
+                    <select ref={answerRef} value={answer} onChange={(e) => setAnswer(e.target.value)} style={{ padding: '16px 18px', border: '2px solid #d1d5db', borderRadius: 14, fontSize: 22, fontWeight: 600 }}>
+                      <option value="">Select place</option>
+                      <option value="ones">ones</option>
+                      <option value="tens">tens</option>
+                      <option value="hundreds">hundreds</option>
+                    </select>
+                  )}
+                  <button type="submit" style={{ padding: "14px 28px", background: "#10b981", color: "white", border: "none", borderRadius: 14, cursor: "pointer", fontWeight: 800, fontSize: 20, boxShadow: '0 8px 18px rgba(16,185,129,0.25)' }}>Submit</button>
+                  {result && (
+                    <>
+                    {result === 'correct' && <div style={{ color: '#166534', fontWeight: 800, fontSize: 20 }}>✅ Correct</div>}
+                    {result === 'incorrect' && <div style={{ color: '#b91c1c', fontWeight: 800, fontSize: 20 }}>{timedOut ? '⏰ Time up — ' : '❌ Incorrect — '} {String(correctAnswer(mathQ))}</div>}
+                    </>
+                  )}
+                  {result && <button type="button" onClick={nextMathQuestion} disabled={!String(answer || '').trim()} style={{ padding: '14px 26px', background: '#bfdbfe', borderRadius: 14, border: 'none', cursor: String(answer || '').trim() ? 'pointer' : 'not-allowed', fontWeight: 800, fontSize: 20, opacity: String(answer || '').trim() ? 1 : 0.6 }}>Next</button>}
+                </form>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+                    <button type="button" onClick={() => markEnglish(true)} style={{ padding: '14px 24px', background: '#dcfce7', color: '#166534', border: '2px solid #bbf7d0', borderRadius: 14, cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>She read it</button>
+                    <button type="button" onClick={() => markEnglish(false)} style={{ padding: '14px 24px', background: '#fee2e2', color: '#7f1d1d', border: '2px solid #fecaca', borderRadius: 14, cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>Couldn't read</button>
+                    {result && (
+                      <>
+                      {result === 'correct' && <div style={{ color: '#166534', fontWeight: 800, fontSize: 20 }}>✅ Great!</div>}
+                      {result === 'incorrect' && <div style={{ color: '#b91c1c', fontWeight: 800, fontSize: 20 }}>{timedOut ? '⏰ Time up — try again' : '❌ Keep practicing'}</div>}
+                      </>
+                    )}
+                    {result && <button type="button" onClick={nextEnglish} style={{ padding: '14px 26px', background: '#bfdbfe', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>Next</button>}
+                  </div>
+                </>
+              )}
               </div>
 
               {/* Right panel */}
-              <aside style={{ width: 320 }}>
-                <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
+              <aside style={{ width: 320, position: 'sticky', top: 12 }}>
+              <div style={{ padding: 14, borderRadius: 12, background: "white", boxShadow: "0 6px 24px rgba(12,20,40,0.04)" }}>
+                {mode === 'kannada' ? (
+                  <>
                   <h3 style={{ marginTop: 0 }}>Weak glyphs</h3>
                   <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy glyphs for {profile}</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
@@ -564,71 +1100,125 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                </div>
+
+                  <div style={{ marginTop: 12 }}>
+                    <button onClick={() => { localStorage.removeItem(statsKeyFor(profile)); setGlyphStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s glyph stats</button>
+                  </div>
+
+                  <div style={{ marginTop: 16, fontSize: 13, color: "#6b7280" }}>
+                    <div style={{ marginBottom: 8, fontWeight: 700 }}>Deck controls</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => { setDeck((d) => shuffleArray(d)); setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Shuffle order</button>
+                      <button onClick={() => { setCardIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Go to first</button>
+                    </div>
+                  </div>
+                  </>
+                ) : mode === 'math' ? (
+                  <>
+                  <h3 style={{ marginTop: 0 }}>Weak math facts</h3>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy for {profile}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {weakFacts.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — answer a few questions.</div>}
+                    {weakFacts.map((w) => (
+                      <div key={w.fact} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                        <div style={{ fontSize: 20 }}>{w.fact}</div>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button onClick={() => { localStorage.removeItem(mathStatsKeyFor(profile)); setMathStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s math stats</button>
+                    <div style={{ fontSize: 12, color: '#6b7280' }}>Bonus settings</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'center' }}>
+                      <label style={{ fontSize: 12 }}>Frequency</label>
+                      <input type="number" min={0} max={1} step={0.05} value={bonusFrequency} onChange={(e) => setBonusFrequency(Math.max(0, Math.min(1, Number(e.target.value))))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
+                      <label style={{ fontSize: 12 }}>Reward</label>
+                      <input type="number" min={1} step={1} value={bonusReward} onChange={(e) => setBonusReward(Math.max(1, Number(e.target.value)))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
+                      <label style={{ fontSize: 12 }}>Penalty</label>
+                      <input type="number" min={1} step={1} value={bonusPenalty} onChange={(e) => setBonusPenalty(Math.max(1, Number(e.target.value)))} style={{ padding: '6px 8px', border: '1px solid #e5e7eb', borderRadius: 8 }} />
+                    </div>
+                  </div>
+                  </>
+                ) : (
+                  <>
+                  <h3 style={{ marginTop: 0 }}>Weak words</h3>
+                  <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 10 }}>Lowest accuracy for {profile}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    {weakEnglish.length === 0 && <div style={{ gridColumn: "1 / -1", color: "#6b7280" }}>No stats yet — practice a few words.</div>}
+                    {weakEnglish.map((w) => (
+                      <div key={w.word} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
+                        <div style={{ fontSize: 16, fontWeight: 700 }}>{w.word}</div>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
+                        <div style={{ fontSize: 11, color: "#6b7280" }}>{w.correct}/{w.attempts}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button onClick={() => { localStorage.removeItem(engStatsKeyFor(profile)); setEngStats({}); }} style={{ padding: "8px 12px", borderRadius: 8, background: "#fee2e2", border: "none", cursor: "pointer" }}>Reset {profile}'s English stats</button>
+                    <button onClick={() => { setEngDeck((d) => shuffleArray(d)); setEngIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Shuffle order</button>
+                    <button onClick={() => { setEngIndex(0); }} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>Go to first</button>
+                    <button onClick={reshuffleEnglish} style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e6e6e6", background: "white", cursor: "pointer" }}>New 200 sample</button>
+                  </div>
+                  </>
+                )}
+              </div>
               </aside>
+
             </div>
-          )}
+            </div>
         </div>
       </div>
     </div>
+
+    {/* Parent award modal */}
+    {showParent && (
+      <div onClick={() => setShowParent(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(17,24,39,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ width: 360, background: 'white', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 16 }}>Parent Controls</div>
+            <button onClick={() => setShowParent(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 20, lineHeight: 1 }}>×</button>
+          </div>
+          <form onSubmit={awardMinutesViaParent}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label style={{ fontSize: 13, color: '#6b7280' }}>Passcode</label>
+              <input type="password" inputMode="numeric" pattern="[0-9]*" value={parentPass} onChange={(e) => setParentPass(e.target.value)} placeholder="6-digit passcode" style={{ padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 16 }} />
+
+              <div style={{ marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 6 }}>Quick adjust (Good/Bad behavior)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 8 }}>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(-10)} style={{ padding: '10px 8px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>−10</button>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(-5)} style={{ padding: '10px 8px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>−5</button>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(-1)} style={{ padding: '10px 8px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>−1</button>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(1)} style={{ padding: '10px 8px', background: '#dcfce7', color: '#14532d', border: '1px solid #bbf7d0', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>+1</button>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(5)} style={{ padding: '10px 8px', background: '#dcfce7', color: '#14532d', border: '1px solid #bbf7d0', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>+5</button>
+                  <button type="button" onClick={() => quickAdjustTvMinutes(10)} style={{ padding: '10px 8px', background: '#dcfce7', color: '#14532d', border: '1px solid #bbf7d0', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>+10</button>
+                </div>
+              </div>
+
+              <label style={{ fontSize: 13, color: '#6b7280', marginTop: 6 }}>Custom award (minutes)</label>
+              <input type="number" min={1} step={1} value={parentMinutes} onChange={(e) => setParentMinutes(e.target.value)} placeholder="e.g. 10" style={{ padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 16 }} />
+              {parentError && <div style={{ color: '#b91c1c', fontWeight: 700 }}>{parentError}</div>}
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                <button type="submit" style={{ padding: '10px 12px', background: '#10b981', color: 'white', border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Award</button>
+                <button type="button" onClick={() => setShowParent(false)} style={{ padding: '10px 12px', background: '#e5e7eb', color: '#111827', border: 'none', borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Close</button>
+                <button type="button" onClick={resetAllTvMinutesViaParent} title="Requires passcode" style={{ padding: '10px 12px', background: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset all TV minutes</button>
+              </div>
+              <div style={{ fontSize: 12, color: '#6b7280' }}>Changes apply to <b>{profile}</b>.</div>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
 
-
-function MCQQuestion({ card, deck, onAnswer }) {
-  // pick a single Kannada kernel glyph from the word that we can map to Devanagari
-  const codepoints = Array.from(card.wordKannada || "");
-  let kernel = null;
-  for (const cp of codepoints) {
-    if (KAN_TO_HI[cp]) {
-      kernel = cp;
-      break;
-    }
-  }
-
-  // if we found a kernel mapping, quiz that single glyph; otherwise fall back to whole-word transliteration
-  const correct = kernel ? KAN_TO_HI[kernel] : (card.transliterationHi || card.transliteration);
-
-  // build distractors: if kernel mode, use other mapped Devanagari letters (unique) and
-  // fall back to whole-word transliterations only if there aren't enough mapped letters.
-  let others = [];
-  if (kernel) {
-    // start from mapped single-letter values and ensure uniqueness
-    const mapped = Array.from(new Set(Object.values(KAN_TO_HI).filter((v) => v !== correct)));
-    others = mapped.slice();
-    // if we don't have enough single-letter distractors, add whole-word transliterations as fallback
-    if (others.length < 3) {
-      const fallback = deck.map((c) => c.transliterationHi || c.transliteration).filter((t) => t !== correct && !others.includes(t));
-      others = others.concat(fallback);
-    }
-  } else {
-    others = deck.map((c) => c.transliterationHi || c.transliteration).filter((t) => t !== correct);
-  }
-
-  // ensure uniqueness and take up to 3 distractors
-  const distractors = shuffleArray(Array.from(new Set(others))).slice(0, 3);
-  const opts = shuffleArray([correct, ...distractors]).slice(0, 4);
-  const [selected, setSelected] = useState(null);
-  const [locked, setLocked] = useState(false);
-
-  function choose(opt) {
-    if (locked) return;
-    setSelected(opt);
-    setLocked(true);
-    const isCorrect = opt === correct;
-    // return the Kannada glyph we quizzed (kernel or first codepoint fallback)
-    const returnedGlyph = kernel ? kernel : (Array.from(card.wordKannada || "")[0] || "");
-    setTimeout(() => onAnswer(isCorrect, returnedGlyph), 300);
-  }
-
-  return (
-    <div style={{ background: "white", padding: 20, borderRadius: 12, boxShadow: "0 12px 40px rgba(12,20,40,0.06)" }}>
-      <div style={{ fontSize: 48, fontWeight: 900, marginBottom: 18 }}>{kernel ? kernel : card.wordKannada}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-        {opts.map((o) => (
-          <button key={o} onClick={() => choose(o)} disabled={locked} style={{ padding: 14, borderRadius: 10, border: selected === o ? "2px solid #10b981" : "1px solid #e6e6e6", background: selected === o ? "#dcfce7" : "white", cursor: locked ? "not-allowed" : "pointer", fontSize: 18 }}>{o}</button>
-        ))}
-      </div>
-    </div>
-  );
+function getMathTimeLimit(q) {
+  if (!q) return 60;
+  if (q.bonus) return 120;
+  if (q.cat === 'zero' || q.cat === 'mul0' || q.cat === 'place' || q.cat === 'face' || q.cat === 'placeName') return 10;
+  return 60;
 }
