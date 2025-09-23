@@ -134,9 +134,9 @@ function counterpartForGlyph(g) {
   return '';
 }
 
-function formatGlyphName(g) {
+function formatGlyphName(g, { showRoman = true } = {}) {
   const script = scriptForGlyph(g);
-  const roman = romanForAny(g);
+  const roman = showRoman ? romanForAny(g) : '';
   const counterpart = counterpartForGlyph(g);
   if (script === 'kn') {
     if (VOWEL_SIGNS_KN.has(g)) {
@@ -649,7 +649,8 @@ export default function App() {
       }
       if (wrongIdx !== null) {
         const g = clusters[wrongIdx];
-        setMicroFeedback(formatGlyphName(g));
+        const showRoman = direction !== 'kn-to-hi';
+        setMicroFeedback(formatGlyphName(g, { showRoman }));
       }
     } else {
       setMicroFeedback(null);
@@ -1447,7 +1448,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                     {activeWeakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>Keep playing! We’ll track tricky letters for you.</div>}
                     {activeWeakGlyphs.map((w) => {
                       const counterpart = counterpartForGlyph(w.glyph);
-                      const roman = romanForAny(w.glyph);
+                      const roman = direction !== 'kn-to-hi' ? romanForAny(w.glyph) : '';
                       return (
                         <div key={`${direction}-${w.glyph}`} style={{ padding: 12, borderRadius: 12, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
                           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, lineHeight: 1 }}>
