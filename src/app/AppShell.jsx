@@ -6,6 +6,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useModeContext } from "./ModeContext";
 import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS, KAN_TO_HI as DATA_KAN_TO_HI, KAN_MATRAS, HI_TO_KAN, HI_MATRAS } from "../data";
+import { scorePlacementDelta, scoreRoundDelta, scoreEnglishDelta, clampMinutes } from "../domain/scoring";
+import { loadTvMinutes as loadTvMin, saveTvMinutes as saveTvMin, loadGlyphStats as loadGlyph, saveGlyphStats as saveGlyph, loadMathStats as loadMath, saveMathStats as saveMath, loadEngStats as loadEng, saveEngStats as saveEng } from "../domain/statsStore";
 
 /*
   Full, self-contained App.jsx for the Kannada flashcards (Arrange mode).
@@ -229,39 +231,16 @@ function statsKeyFor(profile) {
   return `${BASE_STATS_KEY}::${profile}`;
 }
 
-function tvKeyFor(profile) {
-  return `${TV_BASE_KEY}::${profile}`;
-}
+// tvKeyFor kept for compatibility but use domain store
+function tvKeyFor(profile) { return `${TV_BASE_KEY}::${profile}`; }
 
-function loadTvMinutes(profile) {
-  try {
-    const raw = localStorage.getItem(tvKeyFor(profile));
-    return raw ? Number(raw) : 0;
-  } catch (e) {
-    return 0;
-  }
-}
+function loadTvMinutes(profile) { return loadTvMin(profile); }
 
-function saveTvMinutes(profile, minutes) {
-  try {
-    localStorage.setItem(tvKeyFor(profile), String(minutes));
-  } catch (e) {}
-}
+function saveTvMinutes(profile, minutes) { return saveTvMin(profile, minutes); }
 
-function loadGlyphStats(profile) {
-  try {
-    const raw = localStorage.getItem(statsKeyFor(profile));
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
+function loadGlyphStats(profile) { return loadGlyph(profile, 'kn'); }
 
-function saveGlyphStats(profile, s) {
-  try {
-    localStorage.setItem(statsKeyFor(profile), JSON.stringify(s));
-  } catch (e) {}
-}
+function saveGlyphStats(profile, s) { return saveGlyph(profile, s, 'kn'); }
 
 const HINDI_STATS_BASE_KEY = `${BASE_STATS_KEY}_hi_v1`;
 function hiStatsKeyFor(profile) {
@@ -282,42 +261,13 @@ function saveHiStats(profile, s) {
 }
 
 // Math mode stats (per multiplication fact)
-const MATH_STATS_BASE_KEY = `${BASE_STATS_KEY}_math_v1`;
-function mathStatsKeyFor(profile) {
-  return `${MATH_STATS_BASE_KEY}::${profile}`;
-}
-function loadMathStats(profile) {
-  try {
-    const raw = localStorage.getItem(mathStatsKeyFor(profile));
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
-function saveMathStats(profile, s) {
-  try {
-    localStorage.setItem(mathStatsKeyFor(profile), JSON.stringify(s));
-  } catch (e) {}
-}
+function loadMathStats(profile) { return loadMath(profile); }
+function saveMathStats(profile, s) { return saveMath(profile, s); }
 
 // English reading stats (per word)
-const ENG_STATS_BASE_KEY = `${BASE_STATS_KEY}_eng_v1`;
-function engStatsKeyFor(profile) {
-  return `${ENG_STATS_BASE_KEY}::${profile}`;
-}
-function loadEngStats(profile) {
-  try {
-    const raw = localStorage.getItem(engStatsKeyFor(profile));
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
-function saveEngStats(profile, s) {
-  try {
-    localStorage.setItem(engStatsKeyFor(profile), JSON.stringify(s));
-  } catch (e) {}
-}
+function engStatsKeyFor(profile) { return `${BASE_STATS_KEY}_eng_v1::${profile}`; }
+function loadEngStats(profile) { return loadEng(profile); }
+function saveEngStats(profile, s) { return saveEng(profile, s); }
 
 export default function AppShell() {
   const [theme, setTheme] = useState(() => {
@@ -563,8 +513,8 @@ export default function AppShell() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(slotIndex)) return prev; // already scored
       const correctGlyph = clusters[slotIndex];
-      const delta = tile.g === correctGlyph ? 1 : -5;
-      const next = Math.max(0, prev + delta);
+      const delta = scorePlacementDelta(tile.g === correctGlyph);
+      const next = clampMinutes(prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, slotIndex]));
       return next;
@@ -590,8 +540,8 @@ export default function AppShell() {
     setTvMinutes((prev) => {
       if (tvMinutesLock.has(placedIdx)) return prev;
       const correctGlyph = clusters[placedIdx];
-      const delta = tile.g === correctGlyph ? 1 : -5;
-      const next = Math.max(0, prev + delta);
+      const delta = scorePlacementDelta(tile.g === correctGlyph);
+      const next = clampMinutes(prev + delta);
       saveTvMinutes(profile, next);
       setTvMinutesLock((p) => new Set([...p, placedIdx]));
       return next;
@@ -639,7 +589,7 @@ export default function AppShell() {
     setLastCorrectWord(ok ? null : expected);
     if (!ok) {
       setTvMinutes((prev) => {
-        const next = Math.max(0, prev - 2);
+        const next = clampMinutes(prev + scoreRoundDelta(false));
         saveTvMinutes(profile, next);
         return next;
       });
@@ -995,8 +945,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
 
     // scoring: normal +2/-10, bonus adjustable
     setTvMinutes((prev) => {
-    const delta = isCorrect ? 1 : -5;
-      const next = Math.max(0, prev + delta);
+      const next = clampMinutes(prev + scoreRoundDelta(isCorrect));
       saveTvMinutes(profile, next);
       return next;
     });
@@ -1017,8 +966,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     saveMathStats(profile, updated);
 
     setTvMinutes((prev) => {
-    const delta = -5;
-      const next = Math.max(0, prev + delta);
+      const next = clampMinutes(prev + scoreRoundDelta(false));
       saveTvMinutes(profile, next);
       return next;
     });
@@ -1110,8 +1058,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     saveEngStats(profile, updated);
     // scoring: reward reading, small penalty otherwise
     setTvMinutes((prev) => {
-      const delta = correct ? 1 : -5;
-      const next = Math.max(0, prev + delta);
+      const next = clampMinutes(prev + scoreEnglishDelta(correct));
       saveTvMinutes(profile, next);
       return next;
     });
