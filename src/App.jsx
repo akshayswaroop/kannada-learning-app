@@ -1294,7 +1294,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
             </div>
             <div style={{ textAlign: "right", display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
               <div style={{ fontSize: 13, color: themeColors.textMuted }}>{directionMeta.promptLabel} → {directionMeta.targetLabel}</div>
-              {card.transliteration && (
+              {direction !== 'kn-to-hi' && card.transliteration && (
                 <div style={{ fontSize: 16, fontWeight: 600, color: themeColors.textMuted }}>{card.transliteration}</div>
               )}
               <div style={{ fontWeight: 800, fontSize: 16, display: 'inline-flex', alignItems: 'center', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
