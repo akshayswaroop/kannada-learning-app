@@ -142,7 +142,8 @@ function formatGlyphName(g) {
     if (VOWEL_SIGNS_KN.has(g)) {
       return `vowel sign ${g}${roman || counterpart ? ` (${roman}${roman && counterpart ? ' / ' : ''}${counterpart || ''})` : ''}`;
     }
-    if (g === '್') return `halant (${counterpart || '्'})`;
+    // Show halant/virama with a dotted circle so it renders visibly
+    if (g === '್') return `halant (${'◌್'}${counterpart ? ` / ${'◌्'}` : ''})`;
     if (g === 'ಂ') return `anusvara (${counterpart || 'ं'})`;
     if (g === 'ಃ') return `visarga (${counterpart || 'ः'})`;
     if (g === 'ಁ') return `chandrabindu (${counterpart || 'ँ'})`;
@@ -155,7 +156,8 @@ function formatGlyphName(g) {
     if (VOWEL_SIGNS_HI.has(g)) {
       return `matra ${g}${roman || counterpart ? ` (${roman}${roman && counterpart ? ' / ' : ''}${counterpart || ''})` : ''}`;
     }
-    if (g === '्') return `halant (${counterpart || '್'})`;
+    // Show halant/virama with a dotted circle so it renders visibly
+    if (g === '्') return `halant (${'◌्'}${counterpart ? ` / ${'◌್'}` : ''})`;
     if (g === 'ं') return `anusvara (${counterpart || 'ಂ'})`;
     if (g === 'ः') return `visarga (${counterpart || 'ಃ'})`;
     if (g === 'ँ') return `chandrabindu (${counterpart || 'ಁ'})`;
