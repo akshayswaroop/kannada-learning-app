@@ -303,7 +303,31 @@ export default function AppShell() {
   }, [theme, themeColors]);
   const choose = (lightValue, darkValue) => (theme === 'dark' ? darkValue : lightValue);
 
-  const [profile, setProfile] = useState(PROFILES[0]);
+  const PROFILES_STORAGE_KEY = 'kannada_profiles_v1';
+  function loadProfilesList() {
+    try { const raw = localStorage.getItem(PROFILES_STORAGE_KEY); return raw ? JSON.parse(raw) : []; } catch { return []; }
+  }
+  function saveProfilesList(list) { try { localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify(list)); } catch {} }
+  const [profiles, setProfiles] = useState(() => {
+    const extra = loadProfilesList();
+    const merged = [...PROFILES, ...extra].filter(Boolean);
+    // de-dupe case-insensitive
+    const seen = new Set();
+    return merged.filter((p) => { const k = String(p).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  });
+  const [profile, setProfile] = useState(() => (profiles[0] || PROFILES[0]));
+  function addProfile() {
+    const name = (window.prompt('New learner name?') || '').trim();
+    if (!name) return;
+    const lower = name.toLowerCase();
+    if (profiles.some((p) => String(p).toLowerCase() === lower)) return setProfile(name); // already exists
+    const nextList = [...profiles, name];
+    setProfiles(nextList);
+    saveProfilesList(nextList.filter((p) => !PROFILES.includes(p)));
+    setProfile(name);
+    // initialize TV minutes
+    saveTvMinutes(name, loadTvMinutes(name));
+  }
   // Arrange-only app: randomize by default (no UI toggle)
   const [randomize] = useState(true);
   // App mode: 'kannada' | 'math' | 'english'
@@ -1155,10 +1179,11 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                   setProfile(next);
                   // load next profile minutes (effect handles setTvMinutes)
                 }} style={{ padding: "6px 10px", borderRadius: 8, background: themeColors.control, color: themeColors.textPrimary, border: `1px solid ${themeColors.border}` }}>
-                {PROFILES.map((p) => (
+                {profiles.map((p) => (
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
+              <button onClick={addProfile} title="Add learner" style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, cursor: 'pointer', fontWeight: 800 }}>＋</button>
             </div>
             <div>
               <label style={{ margin: '0 8px 0 12px', color: themeColors.textMuted, fontWeight: 700 }}>Mode:</label>
