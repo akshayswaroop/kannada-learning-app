@@ -362,43 +362,26 @@ export default function AppShell() {
     }
   }, [card, deck, direction, cardIndex]);
 
-  const { directionMeta: dirMeta2, targetScript, promptScript, promptWord, targetWord } = useKannadaRound({ card, direction, theme });
+  const { directionMeta: dirMeta2, targetScript, promptScript, promptWord, targetWord, clusters, tileColorFor, tiles, slots, onDragStart, onDragOverSlot, onDropToSlot, placeTileToFirstEmpty, returnSlotToPool } = useKannadaRound({
+    card, direction, theme, TILE_HUES, paletteFor, isVowelGlyph,
+    onPlacement: (isCorrect, slotIndex) => {
+      setTvMinutes((prev) => {
+        if (tvMinutesLock.has(slotIndex)) return prev;
+        const delta = scorePlacementDelta(isCorrect);
+        const next = clampMinutes(prev + delta);
+        saveTvMinutes(profile, next);
+        setTvMinutesLock((p) => new Set([...p, slotIndex]));
+        return next;
+      });
+    },
+    onAttempt: () => setHasAttempted(true)
+  });
   // prefer hook’s computed meta (same value); keep legacy var for compatibility
   const _directionMeta = dirMeta2 || directionMeta;
 
-  const clusters = useMemo(() => Array.from(targetWord || ""), [targetWord]);
-  const colors = useMemo(() => paletteFor(clusters.length), [clusters.length]);
-  // Build a stable color map per-card so the same glyph keeps the same color
-  const glyphColorMap = useMemo(() => {
-    const map = {};
-    const themeMode = theme === 'dark' ? 'dark' : 'light';
-    const vowelArr = (TILE_HUES[themeMode] && TILE_HUES[themeMode].vowel) || [];
-    const consArr = (TILE_HUES[themeMode] && TILE_HUES[themeMode].cons) || [];
-    let vi = 0;
-    let ci = 0;
-    for (const g of clusters) {
-      if (map[g]) continue;
-      if (isVowelGlyph(g, targetScript) && vowelArr.length) {
-        map[g] = vowelArr[vi % vowelArr.length];
-        vi++;
-      } else if (!isVowelGlyph(g, targetScript) && consArr.length) {
-        map[g] = consArr[ci % consArr.length];
-        ci++;
-      } else {
-        // Fallback to general palette if themed arrays are missing
-        const idx = Object.keys(map).length;
-        map[g] = colors[idx % colors.length];
-      }
-    }
-    return map;
-  }, [clusters, theme, colors, targetScript]);
+  // tileColorFor and clusters are provided by the hook
 
-  function tileColorFor(glyph, idx) {
-    return glyphColorMap[glyph] || colors[idx % colors.length];
-  }
-
-  const [tiles, setTiles] = useState([]);
-  const [slots, setSlots] = useState([]);
+  // tiles/slots managed by hook
   // track whether the learner has made an attempt (placed any tile) for the current card
   const [hasAttempted, setHasAttempted] = useState(false);
   const [result, setResult] = useState(null);
@@ -475,18 +458,8 @@ export default function AppShell() {
     };
   }, []);
 
-  // prepare tiles & slots whenever target word changes
+  // reset round-dependent state on card/target change
   useEffect(() => {
-    const base = clusters.map((g, i) => ({ g, idx: i, c: tileColorFor(g, i) }));
-    let shuf = shuffleArray(base);
-    let attempts = 0;
-    // avoid accidentally leaving them in correct order
-    while (shuf.map((t) => t.idx).join(",") === base.map((t) => t.idx).join(",") && attempts < 12) {
-      shuf = shuffleArray(base);
-      attempts++;
-    }
-    setTiles(shuf);
-    setSlots(new Array(clusters.length).fill(null));
     setHasAttempted(false);
     setTvMinutesLock(new Set());
     setResult(null);
@@ -495,82 +468,7 @@ export default function AppShell() {
     setMicroFeedback(null);
   }, [cardIndex, targetWord, direction]);
 
-  // drag handlers
-  function onDragStart(e, tileIndex) {
-    e.dataTransfer.setData("text/plain", tileIndex.toString());
-    e.dataTransfer.effectAllowed = "move";
-  }
-
-  function onDragOverSlot(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }
-
-  function onDropToSlot(e, slotIndex) {
-    e.preventDefault();
-    const tileIndexStr = e.dataTransfer.getData("text/plain");
-    if (tileIndexStr === "") return;
-    const tileIndex = Number(tileIndexStr);
-    if (Number.isNaN(tileIndex)) return;
-    const tile = tiles[tileIndex];
-    if (!tile) return;
-    const newTiles = tiles.filter((_, i) => i !== tileIndex);
-    const existing = slots[slotIndex];
-    const newSlots = [...slots];
-    newSlots[slotIndex] = { ...tile, c: tileColorFor(tile.g, slotIndex) };
-    setTiles(existing ? [...newTiles, existing] : newTiles);
-    setSlots(newSlots);
-    setResult(null);
-
-    // award/penalize immediately for this placement (only once per slot per round)
-    setTvMinutes((prev) => {
-      if (tvMinutesLock.has(slotIndex)) return prev; // already scored
-      const correctGlyph = clusters[slotIndex];
-      const delta = scorePlacementDelta(tile.g === correctGlyph);
-      const next = clampMinutes(prev + delta);
-      saveTvMinutes(profile, next);
-      setTvMinutesLock((p) => new Set([...p, slotIndex]));
-      return next;
-    });
-  }
-
-  // touch fallback (tap a tile to place in first empty slot)
-  function placeTileToFirstEmpty(tileIdx) {
-    const tile = tiles[tileIdx];
-    if (!tile) return;
-    const firstEmpty = slots.findIndex((s) => s === null);
-    if (firstEmpty === -1) return;
-    const newTiles = tiles.filter((_, i) => i !== tileIdx);
-    const newSlots = [...slots];
-    newSlots[firstEmpty] = { ...tile, c: tileColorFor(tile.g, firstEmpty) };
-    setTiles(newTiles);
-    setSlots(newSlots);
-    setResult(null);
-    setHasAttempted(true);
-
-    // award/penalize immediately for this placement (only once per slot per round)
-    const placedIdx = firstEmpty;
-    setTvMinutes((prev) => {
-      if (tvMinutesLock.has(placedIdx)) return prev;
-      const correctGlyph = clusters[placedIdx];
-      const delta = scorePlacementDelta(tile.g === correctGlyph);
-      const next = clampMinutes(prev + delta);
-      saveTvMinutes(profile, next);
-      setTvMinutesLock((p) => new Set([...p, placedIdx]));
-      return next;
-    });
-  }
-
-  function returnSlotToPool(slotIdx) {
-    const tile = slots[slotIdx];
-    if (!tile) return;
-    const newSlots = [...slots];
-    newSlots[slotIdx] = null;
-    setSlots(newSlots);
-    setTiles((prev) => [...prev, tile]);
-    setResult(null);
-    setHasAttempted(true);
-  }
+  // drag/touch handlers now live in the hook
 
   function handleSubmit() {
     const assembled = slots.map((s) => (s ? s.g : "")).join("");
