@@ -92,6 +92,10 @@ export default function KannadaRound(props) {
                 Show {directionMeta.targetLabel}
               </button>
             )}
+            {/* Show Next button after timeout */}
+            {timedOut && (
+              <button onClick={handleNext} style={{ padding: "12px 22px", background: "#bfdbfe", borderRadius: 14, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 18 }}>Next</button>
+            )}
           </div>
         )}
       </div>
