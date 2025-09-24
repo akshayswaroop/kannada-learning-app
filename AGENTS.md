@@ -43,10 +43,7 @@ This guide primes GitHub Copilot, ChatGPT Codex, and similar automation agents b
 - Script sanitization helpers (`sanitizeKannada`, `sanitizeHindi`) must keep only valid glyphs plus joiners/spaces.
 
 ## Recent UX changes agents should preserve
-- Kannada tile colors are consistent per unique glyph within a card; palette varies by vowel/consonant and theme.
-- Practice buddies panel adapts to the active direction, showing counterpart script + romanization for both Kannada and Hindi glyphs (including matras). Percent/attempt text removed to keep tiles clean.
-- Incorrect submissions show a micro-feedback chip like: “The next glyph is ನ (na / न). Try again!” including Hindi or Kannada partners plus romanization (halant, matras, chandrabindu handled explicitly).
-- Child-facing controls keep only a bold Submit button and progress chip; resets/shuffles remain gated inside the Parent modal.
+- Kannada mode now includes a visually appealing, searchable dropdown at the top. Users can type an English transliteration to filter and select a word to practice. Selecting a word loads it for practice; if nothing is selected, the normal random/next logic applies. The dropdown is designed for simplicity and accessibility, and should not disrupt the core tile/slot UI or scoring logic.
 
 ## Helpful references
 - `README.md` — quick run instructions.
