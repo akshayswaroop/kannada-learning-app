@@ -1081,13 +1081,12 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
               </select>
             </div>
             {mode === 'kannada' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 12 }}>
-                <span style={{ color: themeColors.textMuted, fontWeight: 700 }}>Direction:</span>
-                <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  {Object.values(DIRECTION_OPTIONS).map((opt) => {
+              <div>
+                <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 8 }}>
+                  {DIRECTION_OPTIONS && Object.values(DIRECTION_OPTIONS).map((opt) => {
                     const isActive = direction === opt.value;
-                    const bg = isActive ? choose('#bbf7d0', 'rgba(16,185,129,0.24)') : themeColors.control;
-                    const textColor = isActive ? choose('#064e3b', '#bbf7d0') : themeColors.textPrimary;
+                    const bg = isActive ? choose('#10b981', 'rgba(16,185,129,0.25)') : themeColors.control;
+                    const textColor = isActive ? (theme === 'dark' ? '#d1fae5' : 'white') : themeColors.textPrimary;
                     const borderColor = isActive ? choose('#0f9f7a', 'rgba(34,197,94,0.55)') : themeColors.border;
                     return (
                       <button
@@ -1211,6 +1210,10 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                   microFeedback={microFeedback}
                   handleNext={handleNext}
                   timedOut={timedOut}
+                  onSelectWord={selectedCard => {
+                    const idx = deck.findIndex(c => c.id === selectedCard.id);
+                    if (idx !== -1) setCardIndex(idx);
+                  }}
                 />
               ) : mode === 'math' ? (
                 <>
