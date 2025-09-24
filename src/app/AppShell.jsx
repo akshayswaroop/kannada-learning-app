@@ -512,8 +512,8 @@ export default function AppShell() {
       if (wrongIdx !== null) {
         const g = clusters[wrongIdx];
         const showRoman = direction !== 'kn-to-hi';
-        const presentInPool = tiles.some((t) => t.g === g);
-        setMicroFeedback(presentInPool ? formatGlyphName(g, { showRoman }) : (direction === 'kn-to-hi' ? 'the next matra/letter' : 'the next glyph'));
+        // Always show the formatted glyph name instead of generic fallback
+        setMicroFeedback(formatGlyphName(g, { showRoman }));
       }
     } else {
       setMicroFeedback(null);
