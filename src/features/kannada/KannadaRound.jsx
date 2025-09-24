@@ -33,13 +33,40 @@ export default function KannadaRound(props) {
   // Dropdown state and logic
   const [search, setSearch] = React.useState("");
   const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const [activeIndex, setActiveIndex] = React.useState(-1);
   const filteredCards = RAW_CARDS.filter(card =>
     card.transliteration.toLowerCase().includes(search.toLowerCase())
   );
   function handleSelectCard(card) {
     setDropdownOpen(false);
     setSearch("");
+    setActiveIndex(-1);
     if (props.onSelectWord) props.onSelectWord(card);
+  }
+
+  // Keyboard navigation for dropdown
+  function handleDropdownKeyDown(e) {
+    if (!dropdownOpen) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveIndex(i => {
+        const next = i < filteredCards.length - 1 ? i + 1 : 0;
+        return next;
+      });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveIndex(i => {
+        const prev = i > 0 ? i - 1 : filteredCards.length - 1;
+        return prev;
+      });
+    } else if (e.key === 'Enter') {
+      if (activeIndex >= 0 && activeIndex < filteredCards.length) {
+        handleSelectCard(filteredCards[activeIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setDropdownOpen(false);
+      setActiveIndex(-1);
+    }
   }
 
   return (
@@ -51,8 +78,13 @@ export default function KannadaRound(props) {
             type="text"
             placeholder="Type to search word (English)"
             value={search}
-            onChange={e => { setSearch(e.target.value); setDropdownOpen(true); }}
+            onChange={e => {
+              setSearch(e.target.value);
+              setDropdownOpen(true);
+              setActiveIndex(-1);
+            }}
             onFocus={() => setDropdownOpen(true)}
+            onKeyDown={handleDropdownKeyDown}
             style={{
               padding: '10px 16px',
               borderRadius: 12,
@@ -92,7 +124,7 @@ export default function KannadaRound(props) {
             {filteredCards.length === 0 && (
               <div style={{ padding: 18, color: '#64748b', fontWeight: 600 }}>No matches</div>
             )}
-            {filteredCards.map(card => (
+            {filteredCards.map((card, idx) => (
               <div
                 key={card.id}
                 onClick={() => handleSelectCard(card)}
@@ -101,14 +133,14 @@ export default function KannadaRound(props) {
                   cursor: 'pointer',
                   fontWeight: 700,
                   fontSize: 18,
-                  color: '#312e81',
+                  color: idx === activeIndex ? '#fff' : '#312e81',
                   borderBottom: '1px solid #f1f5f9',
-                  background: '#f8fafc',
+                  background: idx === activeIndex ? '#6366f1' : '#f8fafc',
                   transition: 'background 0.2s',
                 }}
                 onMouseDown={e => e.preventDefault()}
               >
-                {card.transliteration} <span style={{ color: '#64748b', fontWeight: 400, fontSize: 15 }}>({card.wordKannada})</span>
+                {card.transliteration} <span style={{ color: idx === activeIndex ? '#e0e7ff' : '#64748b', fontWeight: 400, fontSize: 15 }}>({card.wordKannada})</span>
               </div>
             ))}
           </div>
