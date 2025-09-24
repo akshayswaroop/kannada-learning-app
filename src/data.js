@@ -6,33 +6,26 @@ export const TV_BASE_KEY = "kannada_tv_minutes_v1";
 
 export const PROFILES = ["Mishika", "Akshay", "Eva"];
 
-// 200 common English words suitable for early readers (Senior KG)
+// 2-3 letter English words suitable for early readers (Senior KG)
 export const ENGLISH_WORDS = [
-  "a","about","after","again","all","am","an","and","any","are",
-  "as","at","away","back","be","because","been","before","big","boy",
-  "but","by","call","came","can","come","could","day","did","do",
-  "down","each","find","first","for","from","funny","girl","give","go",
-  "had","has","have","he","help","her","here","him","his","how",
-  "I","if","in","into","is","it","jump","just","know","like",
-  "little","look","make","many","me","more","my","new","no","not",
-  "now","of","on","one","only","or","other","out","over","people",
-  "play","put","red","run","said","see","she","so","some","take",
-  "than","that","the","their","them","then","there","they","this","three",
-  "to","two","up","us","use","very","was","we","were","what",
-  "when","where","which","who","will","with","words","would","write","yes",
-  "you","your","yellow","blue","green","black","white","brown","school","home",
-  "book","cat","dog","mom","dad","baby","ball","car","bus","bike",
-  "apple","banana","milk","water","bread","egg","cake","cookie","walk","sing",
-  "read","draw","cut","open","close","small","tall","short","long","hot",
-  "cold","warm","old","new","happy","sad","good","bad","kind","friend",
-  "fun","game","time","lunch","snack","rain","sun","snow","night","today",
-  "tomorrow","yesterday","near","far","slow","fast","stop","go","start","end",
-  "inside","outside","top","bottom","under","over","left","right","above","below",
-  "around","across","early","late","family","sister","brother","teacher","class","number",
-  "color","shape","circle","square","triangle","rectangle","animal","flower","garden","park",
-  "street","house","door","window","table","chair","bed","room","schoolbag","pencil",
-  "pen","paper","crayon","bookcase","clock","shoe","sock","shirt","pants","coat",
-  "hat","glove","playground","friendship","story","picture","laugh","smile","thank","please"
+  "a", "am", "an", "as", "at", "be", "by", "do", "go",
+  "he", "I", "if", "in", "is", "it", "me", "my", "no", "of",
+  "on", "or", "so", "to", "up", "us", "we", "boy", "big", "but",
+  "can", "cat", "day", "did", "dog", "egg", "fun", "had", "hat", "has",
+  "him", "his", "hot", "how", "mom", "new", "now", "old", "out", "put",
+  "red", "run", "sad", "see", "she", "sun", "the", "top", "two", "use",
+  "was", "who", "yes", "you", "all", "and", "any", "are", "bad", "bag",
+  "bed", "bee", "bus", "car", "cut", "eat", "end", "eye", "far", "fat",
+  "fly", "for", "get", "got", "her", "hot", "ice", "job", "key", "let",
+  "man", "map", "may", "net", "not", "one", "our", "own", "pan", "pen",
+  "pet", "pig", "pop", "rat", "sat", "six", "sit", "ten", "toy", "try",
+  "van", "win", "yet", "zoo", "add", "age", "air", "art", "ask", "ball",
+  "bat", "bit", "box", "boy", "cup", "dig", "ear", "eat", "fan", "fix",
+  "fox", "gap", "gas", "gun", "hat", "hit", "hop", "hug", "jam", "jet",
+  "joy", "kid", "lap", "leg", "lip", "log", "lot", "low", "mad", "mix",
+  "mud", "nap", "nut", "oil", "owl", "paw", "pay", "pie", "pit", "pot",
+  "raw", "rib", "rid", "row", "rub", "sad", "sip", "sky", "tap", "tax",
+  "tip", "top", "toy", "tug", "web", "wet", "win", "zip"
 ];
 
 export const RAW_CARDS = [

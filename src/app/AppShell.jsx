@@ -8,6 +8,24 @@ import { useModeContext } from "./ModeContext";
 import { RAW_CARDS, PROFILES, BASE_STATS_KEY, TV_BASE_KEY, ENGLISH_WORDS, KAN_TO_HI as DATA_KAN_TO_HI, KAN_MATRAS, HI_TO_KAN, HI_MATRAS } from "../data";
 import { scorePlacementDelta, scoreRoundDelta, scoreEnglishDelta, clampMinutes } from "../domain/scoring";
 import { loadTvMinutes as loadTvMin, saveTvMinutes as saveTvMin, loadGlyphStats as loadGlyph, saveGlyphStats as saveGlyph, loadMathStats as loadMath, saveMathStats as saveMath, loadEngStats as loadEng, saveEngStats as saveEng } from "../domain/statsStore";
+import { loadMasteryData, saveMasteryData, loadActiveSet, saveActiveSet, loadProgress, saveProgress, loadUndoState, saveUndoState, clearUndoState } from "../domain/masteryStore";
+import { 
+  initWordProgress, 
+  updateWordProgress, 
+  shouldCreateActiveSet, 
+  createActiveSet, 
+  isActiveSetCompleted, 
+  getNextWordFromActiveSet, 
+  getProgressStats, 
+  calculateTotalSets,
+  resetCurrentSet,
+  resetAllMastery,
+  getUnknownWords,
+  getUntestedWords,
+  UNDO_TIMEOUT_MS,
+  ACTIVE_SET_SIZE,
+  MASTERY_STREAK_REQUIRED
+} from "../domain/masteryLogic";
 import KannadaRound from "../features/kannada/KannadaRound";
 import { useKannadaRound } from "../features/kannada/useKannadaRound";
 
@@ -394,6 +412,20 @@ export default function AppShell() {
   const [mathStats, setMathStats] = useState(() => loadMathStats(PROFILES[0]));
   const [engStats, setEngStats] = useState(() => loadEngStats(PROFILES[0]));
   const [tvMinutes, setTvMinutes] = useState(() => loadTvMinutes(PROFILES[0]));
+
+  // English Mastery System State
+  const [masteryData, setMasteryData] = useState(() => loadMasteryData(PROFILES[0]));
+  const [activeSet, setActiveSet] = useState(() => loadActiveSet(PROFILES[0]));
+  const [progress, setProgress] = useState(() => loadProgress(PROFILES[0]));
+  const [undoState, setUndoState] = useState(null);
+  const [currentWord, setCurrentWord] = useState(null);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    function onResize() { setWindowWidth(window.innerWidth); }
+    if (typeof window !== 'undefined') window.addEventListener('resize', onResize);
+    return () => { if (typeof window !== 'undefined') window.removeEventListener('resize', onResize); };
+  }, []);
   // track which slot indices have already been scored this round to avoid double-counting
   const [tvMinutesLock, setTvMinutesLock] = useState(() => new Set());
 
@@ -427,6 +459,13 @@ export default function AppShell() {
     setMathStats(loadMathStats(profile));
     setEngStats(loadEngStats(profile));
     setTvMinutes(loadTvMinutes(profile));
+    
+    // Load mastery system data for the new profile
+    setMasteryData(loadMasteryData(profile));
+    setActiveSet(loadActiveSet(profile));
+    setProgress(loadProgress(profile));
+    setUndoState(null);
+    clearUndoState(profile);
   }, [profile]);
 
   // no toggle: randomize is true by default — build deck once on mount
@@ -569,6 +608,29 @@ function glyphColorFor(accuracy, themeMode = 'light') {
   if (accuracy < 0.9) return "#fff7ed";
   return "#ecfdf5";
 }
+
+  // Helper to pick a readable tile background and text color for a word's progress
+  function tileBackgroundFor({ wp, accuracy }, themeMode = 'light') {
+    // Return object { bg, color }
+    // Dark theme mapping: mirror the light pastel semantics using saturated dark variants
+    if (wp.mastered) return { bg: themeMode === 'dark' ? '#065f46' : '#dcfce7', color: themeMode === 'dark' ? '#ecfdf5' : '#065f46' };
+    // Unattempted: neutral, matches panel tone
+    if (!wp.attempts || wp.attempts === 0) return { bg: themeMode === 'dark' ? themeColors.panel : '#f1f5f9', color: themeMode === 'dark' ? '#e6eef6' : '#374151' };
+    // Zero accuracy after attempts -> clear red alert
+    if (wp.attempts > 0 && accuracy === 0) return { bg: themeMode === 'dark' ? '#881337' : '#fee2e2', color: themeMode === 'dark' ? '#fff' : '#7f1d1d' };
+    // Near mastery (streak >= 3): amber/yellow
+    if (wp.streak >= 3) return { bg: themeMode === 'dark' ? '#b45309' : '#fef3c7', color: themeMode === 'dark' ? '#fff' : '#92400e' };
+    // Some progress (streak >=1): gentle rose/secondary
+    if (wp.streak >= 1) return { bg: themeMode === 'dark' ? '#6b213f' : '#fef7ff', color: themeMode === 'dark' ? '#fff' : '#6b213f' };
+    // fallback: use glyphColorFor but convert to solid-ish in dark mode for contrast
+    const g = glyphColorFor(accuracy, themeMode);
+    if (themeMode === 'dark') {
+      // Map translucent tints to solid readable backgrounds in dark mode
+      if (g.includes('rgba')) return { bg: '#111827', color: '#e6edf3' };
+      return { bg: g, color: '#fff' };
+    }
+    return { bg: g, color: '#111827' };
+  }
 
   // parent award handler
   function awardMinutesViaParent(e) {
@@ -955,76 +1017,352 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     }
   }, [mode, mathQ]);
 
-  // English reading mode state
-  const [engDeck, setEngDeck] = useState(() => shuffleArray(ENGLISH_WORDS).slice(0, 200));
-  const [engIndex, setEngIndex] = useState(0);
-  const engWord = useMemo(() => engDeck[engIndex] || engDeck[0] || ENGLISH_WORDS[0], [engDeck, engIndex]);
+  // English Mastery System Logic
+  
+  // Initialize current word and manage active set creation
+  useEffect(() => {
+    // Check if we should create an active set
+    if (shouldCreateActiveSet(masteryData, activeSet)) {
+      const newSetNumber = (progress.setNumber || 0) + 1;
+      const newActiveSet = createActiveSet(masteryData, newSetNumber);
+      const updatedProgress = {
+        ...progress,
+        currentSetId: newActiveSet.setId,
+        setNumber: newSetNumber,
+        totalSets: calculateTotalSets(masteryData),
+        masteredCount: 0
+      };
+      
+      setActiveSet(newActiveSet);
+      setProgress(updatedProgress);
+      saveActiveSet(profile, newActiveSet);
+      saveProgress(profile, updatedProgress);
+    }
+    
+    // Set current word
+    if (activeSet) {
+      // Prefer the next non-mastered word from the active set
+      let nextWord = getNextWordFromActiveSet(masteryData, activeSet);
+      if (!nextWord) {
+        // fallback: find first non-mastered word in activeSet.words
+        const candidates = Array.isArray(activeSet.words) ? activeSet.words.filter((w) => { const wp = masteryData[w]; return !(wp && wp.mastered); }) : [];
+        if (candidates.length) nextWord = candidates[0];
+      }
+      if (nextWord) setCurrentWord(nextWord);
+      return;
+    }
+
+    // No active set exists: create from unmastered words (untested / unknown) or fallback
+    const untestedWords = getUntestedWords(masteryData);
+    if (untestedWords && untestedWords.length > 0) {
+      setCurrentWord(untestedWords[Math.floor(Math.random() * untestedWords.length)]);
+      return;
+    }
+    // final fallback to global list
+    const pick = ENGLISH_WORDS[Math.floor(Math.random() * ENGLISH_WORDS.length)];
+    setCurrentWord(pick);
+  }, [masteryData, activeSet, progress, profile]);
+
+  const engWord = currentWord || ENGLISH_WORDS[0];
+
   function markEnglish(correct) {
-    const key = engWord;
+    if (!engWord) return;
+    
+    const timestamp = Date.now();
+    
+    // Store undo state
+    const undoAction = {
+      type: 'markEnglish',
+      word: engWord,
+      correct,
+      oldProgress: masteryData[engWord] ? { ...masteryData[engWord] } : null,
+      oldActiveSet: activeSet ? { ...activeSet } : null,
+      oldProgressState: { ...progress },
+      timestamp
+    };
+    setUndoState(undoAction);
+    saveUndoState(profile, undoAction);
+    
+    // Clear undo state after timeout
+    setTimeout(() => {
+      setUndoState(null);
+      clearUndoState(profile);
+    }, UNDO_TIMEOUT_MS);
+    
+    // Update word progress
+    const oldProgress = masteryData[engWord] || initWordProgress(engWord);
+    const newProgress = updateWordProgress(oldProgress, correct, timestamp);
+    
+    const updatedMasteryData = {
+      ...masteryData,
+      [engWord]: newProgress
+    };
+    
+    setMasteryData(updatedMasteryData);
+    saveMasteryData(profile, updatedMasteryData);
+    
+    // Update legacy stats for compatibility
     const updated = { ...engStats };
-    const stat = updated[key] ? { ...updated[key] } : { attempts: 0, correct: 0 };
+    const stat = updated[engWord] ? { ...updated[engWord] } : { attempts: 0, correct: 0 };
     stat.attempts = (stat.attempts || 0) + 1;
     if (correct) stat.correct = (stat.correct || 0) + 1;
-    updated[key] = stat;
+    updated[engWord] = stat;
     setEngStats(updated);
     saveEngStats(profile, updated);
-    // scoring: reward reading, small penalty otherwise
+    
+    // Scoring: reward reading, small penalty otherwise
     setTvMinutes((prev) => {
       const next = clampMinutes(prev + scoreEnglishDelta(correct));
       saveTvMinutes(profile, next);
       return next;
     });
+    
     setResult(correct ? 'correct' : 'incorrect');
+    
+    // Check if set is completed
+    if (activeSet && isActiveSetCompleted(updatedMasteryData, activeSet)) {
+      // Auto-advance to next set
+      setTimeout(() => {
+        advanceToNextSet(updatedMasteryData);
+      }, 1000);
+    }
   }
+
+  function advanceToNextSet(currentMasteryData) {
+    const unknownWords = getUnknownWords(currentMasteryData);
+    
+    if (unknownWords.length >= 12) {
+      // Create next set
+      const nextSetNumber = (progress.setNumber || 0) + 1;
+      const newActiveSet = createActiveSet(currentMasteryData, nextSetNumber);
+      const updatedProgress = {
+        ...progress,
+        currentSetId: newActiveSet.setId,
+        setNumber: nextSetNumber,
+        totalSets: calculateTotalSets(currentMasteryData),
+        masteredCount: 0
+      };
+      
+      setActiveSet(newActiveSet);
+      setProgress(updatedProgress);
+      saveActiveSet(profile, newActiveSet);
+      saveProgress(profile, updatedProgress);
+    } else if (unknownWords.length > 0) {
+      // Create smaller final set
+      const nextSetNumber = (progress.setNumber || 0) + 1;
+      const finalSet = {
+        setId: `set_${nextSetNumber}_${Date.now()}`,
+        words: unknownWords,
+        createdAt: Date.now(),
+        setNumber: nextSetNumber
+      };
+      const updatedProgress = {
+        ...progress,
+        currentSetId: finalSet.setId,
+        setNumber: nextSetNumber,
+        totalSets: nextSetNumber,
+        masteredCount: 0
+      };
+      
+      setActiveSet(finalSet);
+      setProgress(updatedProgress);
+      saveActiveSet(profile, finalSet);
+      saveProgress(profile, updatedProgress);
+    } else {
+      // All words mastered!
+      setActiveSet(null);
+      setProgress({ currentSetId: null, setNumber: 0, totalSets: 0, masteredCount: 0 });
+      saveActiveSet(profile, null);
+      saveProgress(profile, { currentSetId: null, setNumber: 0, totalSets: 0, masteredCount: 0 });
+    }
+  }
+
   function nextEnglish() {
-    setEngIndex((i) => (i + 1) % engDeck.length);
+    if (activeSet && Array.isArray(activeSet.words) && activeSet.words.length > 0) {
+      // Pick a random word from the current practice set that is NOT mastered
+      const candidates = activeSet.words.filter((w) => {
+        const wp = masteryData[w];
+        return !(wp && wp.mastered);
+      });
+      if (candidates.length > 0) {
+        setCurrentWord(candidates[Math.floor(Math.random() * candidates.length)]);
+      } else {
+        // All words mastered in this set; fallback to rotation logic
+        const nextWord = getNextWordFromActiveSet(masteryData, activeSet);
+        if (nextWord) setCurrentWord(nextWord);
+      }
+    } else {
+      // If no active set, pick a random untested word
+      const untestedWords = getUntestedWords(masteryData);
+      if (untestedWords.length > 0) {
+        setCurrentWord(untestedWords[Math.floor(Math.random() * untestedWords.length)]);
+      }
+    }
     setResult(null);
   }
-  function reshuffleEnglish() {
-    setEngDeck(shuffleArray(ENGLISH_WORDS).slice(0, 200));
-    setEngIndex(0);
+
+  // Control functions
+  function undoLastTap() {
+    if (!undoState || Date.now() - undoState.timestamp > UNDO_TIMEOUT_MS) {
+      setUndoState(null);
+      clearUndoState(profile);
+      return;
+    }
+    
+    // Restore previous state
+    if (undoState.oldProgress) {
+      const restoredMasteryData = {
+        ...masteryData,
+        [undoState.word]: undoState.oldProgress
+      };
+      setMasteryData(restoredMasteryData);
+      saveMasteryData(profile, restoredMasteryData);
+    } else {
+      // Remove the word from mastery data
+      const restoredMasteryData = { ...masteryData };
+      delete restoredMasteryData[undoState.word];
+      setMasteryData(restoredMasteryData);
+      saveMasteryData(profile, restoredMasteryData);
+    }
+    
+    // Restore progress and active set
+    if (undoState.oldActiveSet) {
+      setActiveSet(undoState.oldActiveSet);
+      saveActiveSet(profile, undoState.oldActiveSet);
+    }
+    setProgress(undoState.oldProgressState);
+    saveProgress(profile, undoState.oldProgressState);
+    
+    // Clear undo state
+    setUndoState(null);
+    clearUndoState(profile);
     setResult(null);
   }
+
+  function resetCurrentSetMastery() {
+    if (!activeSet) return;
+    
+    const resetMasteryData = resetCurrentSet(masteryData, activeSet);
+    setMasteryData(resetMasteryData);
+    saveMasteryData(profile, resetMasteryData);
+    
+    // Reset progress for this set
+    const updatedProgress = {
+      ...progress,
+      masteredCount: 0
+    };
+    setProgress(updatedProgress);
+    saveProgress(profile, updatedProgress);
+    
+    setResult(null);
+  }
+
+  function resetAllMasteryProgress() {
+    const emptyMasteryData = resetAllMastery();
+    setMasteryData(emptyMasteryData);
+    saveMasteryData(profile, emptyMasteryData);
+    
+    // Clear active set and progress
+    setActiveSet(null);
+    setProgress({ currentSetId: null, setNumber: 0, totalSets: 0, masteredCount: 0 });
+    saveActiveSet(profile, null);
+    saveProgress(profile, { currentSetId: null, setNumber: 0, totalSets: 0, masteredCount: 0 });
+    
+    setResult(null);
+    setUndoState(null);
+    clearUndoState(profile);
+  }
+
   const weakEnglish = useMemo(() => {
-    return Object.entries(engStats)
-      .map(([w, s]) => ({ word: w, attempts: s.attempts || 0, correct: s.correct || 0, accuracy: s.attempts ? (s.correct || 0) / s.attempts : 1 }))
+    return Object.entries(masteryData)
+      .map(([word, wp]) => ({ 
+        word, 
+        // Prefer legacy engStats (stores correct count) when available for accurate accuracy calculation
+        attempts: wp.attempts || 0,
+        correct: (engStats && engStats[word] && Number(engStats[word].correct)) ? Number(engStats[word].correct) : 0,
+        accuracy: (engStats && engStats[word] && Number(engStats[word].attempts)) ? (Number(engStats[word].correct || 0) / Number(engStats[word].attempts || 1)) : (wp.attempts ? (wp.streak > 0 ? (wp.streak / wp.attempts) : 0) : 1),
+        streak: wp.streak,
+        mastered: wp.mastered
+      }))
       .filter((x) => x.attempts > 0)
-      .sort((a, b) => a.accuracy - b.accuracy)
-      .slice(0, 12);
-  }, [engStats]);
+      .sort((a, b) => {
+        // Mastered words at bottom
+        if (a.mastered !== b.mastered) return a.mastered - b.mastered;
+        // Then by accuracy (lower first)
+        return a.accuracy - b.accuracy;
+      })
+      .slice(0, 20); // Show more for mastery system
+  }, [masteryData]);
+
+  // Progress statistics
+  const progressStats = useMemo(() => {
+    return getProgressStats(masteryData, activeSet, progress);
+  }, [masteryData, activeSet, progress]);
+
+  // Combine active set words and weak English words into a single list for the right panel.
+  // Active set words come first; then fill with recent weak words (no duplicates). Limit to ACTIVE_SET_SIZE.
+  const rightPanelWords = useMemo(() => {
+    const active = activeSet && Array.isArray(activeSet.words) ? activeSet.words : [];
+    const weakList = weakEnglish.map(w => w.word);
+    const combined = [...active, ...weakList.filter(w => !active.includes(w))].slice(0, ACTIVE_SET_SIZE);
+    return combined.map(word => {
+      const wp = masteryData[word] || { word, streak: 0, attempts: 0, lastSeen: 0, mastered: false };
+      const weakInfo = weakEnglish.find(w => w.word === word) || null;
+      return { word, wp, weakInfo, fromActive: active.includes(word) };
+    });
+  }, [activeSet, weakEnglish, masteryData]);
+
+  // Ensure there's always at least one word to display in English practice.
+  const displayPanelData = useMemo(() => {
+    // If we have combined panel words, use those
+    if (rightPanelWords && rightPanelWords.length) return rightPanelWords.map(({ word, wp }) => ({ word, wp }));
+
+    // Fallback: prefer currentWord, then untested words, then global ENGLISH_WORDS
+    const cw = currentWord;
+    if (cw) return [{ word: cw, wp: masteryData[cw] || { word: cw, streak: 0, attempts: 0, lastSeen: 0, mastered: false } }];
+    const untested = getUntestedWords(masteryData || {});
+    if (untested && untested.length) {
+      const pick = untested[Math.floor(Math.random() * untested.length)];
+      return [{ word: pick, wp: masteryData[pick] || { word: pick, streak: 0, attempts: 0, lastSeen: 0, mastered: false } }];
+    }
+    // final fallback
+    const pick = ENGLISH_WORDS[Math.floor(Math.random() * ENGLISH_WORDS.length)];
+    return [{ word: pick, wp: masteryData[pick] || { word: pick, streak: 0, attempts: 0, lastSeen: 0, mastered: false } }];
+  }, [rightPanelWords, currentWord, masteryData]);
 
   // Start/Reset timers per mode (unified 120s timer for all modes)
   useEffect(() => {
     if (timerRef.current) clearInterval(timerRef.current);
-    let limit = 120;
-    timeLimitRef.current = limit;
-    setCurrentTimeLimit(limit);
-    if (result) return;
-    if (mode !== 'math' && mode !== 'english' && mode !== 'kannada') return;
-    setTimedOut(false);
-    setTimeLeft(limit);
-    timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t <= 1) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-          if (mode === 'math') handleMathTimeout();
-          else if (mode === 'english') handleEnglishTimeout();
-          else if (mode === 'kannada') handleKannadaTimeout();
-          return 0;
-        }
-        const next = t - 1;
-        if (next > 0 && next <= Math.min(5, timeLimitRef.current)) playBeep(next <= 2 ? 1400 : 950, 0.12);
-        return next;
-      });
-    }, 1000);
+    // Keep timers for math and kannada only. English practice uses no timer per new UX.
+    if (mode === 'math' || mode === 'kannada') {
+      let limit = 120;
+      timeLimitRef.current = limit;
+      setCurrentTimeLimit(limit);
+      if (result) return;
+      setTimedOut(false);
+      setTimeLeft(limit);
+      timerRef.current = setInterval(() => {
+        setTimeLeft((t) => {
+          if (t <= 1) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+            if (mode === 'math') handleMathTimeout();
+            else if (mode === 'kannada') handleKannadaTimeout();
+            return 0;
+          }
+          const next = t - 1;
+          if (next > 0 && next <= Math.min(5, timeLimitRef.current)) playBeep(next <= 2 ? 1400 : 950, 0.12);
+          return next;
+        });
+      }, 1000);
+    }
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
     };
-  }, [mode, mathQ, engIndex, cardIndex, result]);
+  }, [mode, mathQ, engWord, cardIndex, result]);
 
   // Stop timer once result is shown
   useEffect(() => {
@@ -1037,9 +1375,33 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
   // Audio cues for outcomes
   useEffect(() => {
     if (!result) return;
-    if (result === 'correct') playBeep(1568, 0.25);
-    else playBeep(330, 0.3);
+    if (result === 'correct') {
+      playBeep(1568, 0.25);
+      // pulse fill briefly
+      setFillPulse(true);
+      setTimeout(() => setFillPulse(false), 480);
+    } else {
+      // wrong answer: low beep and shake
+      playBeep(220, 0.28);
+      setShakeWord(true);
+      setTimeout(() => setShakeWord(false), 520);
+    }
   }, [result]);
+
+  // Celebrate when a word becomes mastered
+  useEffect(() => {
+    if (!result) return;
+    if (result === 'correct') {
+      const w = engWord || '';
+      const wp = (masteryData && masteryData[w]) ? masteryData[w] : null;
+      if (wp && wp.mastered) {
+        // success chime
+        playBeep(1760, 0.32);
+        setCelebrate(true);
+        setTimeout(() => setCelebrate(false), 1200);
+      }
+    }
+  }, [result, masteryData, engWord]);
 
   const timerBadgeStyle = useMemo(() => {
     const background = timeLeft <= 3 ? themeColors.timerCritical : (timeLeft <= 7 ? themeColors.timerWarning : themeColors.timerDefault);
@@ -1047,11 +1409,50 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
     return { background, color };
   }, [timeLeft, themeColors, theme]);
 
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [shakeWord, setShakeWord] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
+  const [fillPulse, setFillPulse] = useState(false);
+
   return (
     <>
     <style>{`
       @keyframes pulseBadge {0%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,.45);} 70%{transform:scale(1.03); box-shadow:0 0 0 12px rgba(245,158,11,0);} 100%{transform:scale(1); box-shadow:0 0 0 0 rgba(245,158,11,0);}}
+      @keyframes tilePop { 0% { transform: scale(0.96); opacity: 0.95 } 60% { transform: scale(1.03); } 100% { transform: scale(1); opacity: 1 }}
+      @keyframes shake { 0% { transform: translateX(0) } 20% { transform: translateX(-10px) } 40% { transform: translateX(8px) } 60% { transform: translateX(-6px) } 80% { transform: translateX(4px) } 100% { transform: translateX(0) }}
+      @keyframes celebratePop { 0% { transform: scale(0.96); opacity: 0 } 50% { transform: scale(1.06); opacity: 1 } 100% { transform: scale(1); opacity: 1 }}
+  @keyframes confettiFall { 0% { transform: translateY(-10vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(80vh) rotate(720deg); opacity: 0.9 }}
+  @keyframes confettiSwing { 0% { transform: translateX(0) } 50% { transform: translateX(12px) } 100% { transform: translateX(0) }}
+  @keyframes sparklePulse { 0% { transform: scale(0.9); opacity: 0 } 50% { transform: scale(1.08); opacity: 1 } 100% { transform: scale(1); opacity: 0 }}
+  .word-glow { text-shadow: 0 6px 18px rgba(255,165,85,0.14), 0 2px 8px rgba(0,0,0,0.12); }
+  .word-sparkle { position: absolute; width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 12px rgba(255,255,255,0.9); opacity: 0; animation: sparklePulse 1100ms ease forwards; }
       .bonus-badge { animation: pulseBadge 1.2s infinite; }
+      .word-shake { animation: shake 520ms cubic-bezier(.36,.07,.19,.97); }
+      .word-fill-pulse { transform-origin: center; animation: celebratePop 420ms ease; }
+      .confetti { position: absolute; pointer-events: none; left: 0; right: 0; top: 0; bottom: 0; overflow: visible; z-index: 60; }
+      .confetti-item { position: absolute; width: 10px; height: 16px; border-radius: 2px; opacity: 0.95; transform-origin: center; animation-name: confettiFall, confettiSwing; animation-duration: 1100ms, 900ms; animation-timing-function: linear, ease-in-out; animation-iteration-count: 1, infinite; }
+
+      /* Rainbow fill and sparkle */
+      .rainbow-text { display: inline-block; position: relative; }
+      .rainbow-base { color: var(--rainbow-fallback, #111827); }
+      .rainbow-overlay { position: absolute; left: 0; top: 0; bottom: 0; overflow: hidden; width: 0%; transition: width 420ms cubic-bezier(.2,.9,.2,1); }
+      .rainbow-gradient {
+        background: linear-gradient(90deg, #ff4d4d 0%, #ff8a3d 20%, #ffd24d 40%, #4dd08a 60%, #5db3ff 80%, #b98bff 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        display: inline-block;
+      }
+      .rainbow-glow { filter: drop-shadow(0 8px 28px rgba(120, 86, 255, 0.14)); }
+      .rainbow-locked { box-shadow: 0 6px 30px rgba(120,86,255,0.12); border-radius: 6px; }
+      .sparkle { position: absolute; left: 50%; top: -12px; transform: translateX(-50%); width: 36px; height: 36px; pointer-events: none; opacity: 0; transition: opacity 360ms ease; }
+      .sparkle.visible { opacity: 1; animation: celebratePop 680ms ease; }
+
+      /* Bottom mini-tiles */
+      .mini-tiles { display:flex; gap:10px; align-items:center; justify-content:center; padding:12px 8px; }
+      .mini-tile { position:relative; width:56px; height:56px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-weight:800; cursor:pointer; user-select:none; box-shadow: 0 6px 20px rgba(2,6,23,0.06); border: 2px solid rgba(0,0,0,0.06); background: var(--mini-bg, rgba(255,255,255,0.9)); }
+      .mini-fill { position: absolute; left:0; top:0; bottom:0; overflow:hidden; width:0%; border-radius:999px; display:flex; align-items:center; justify-content:center; }
+      .mini-label { position:relative; z-index:2; color: var(--mini-label, #111827); font-size:14px; }
     `}</style>
     <div style={{ minHeight: "100vh", padding: 20, fontFamily: "Inter, system-ui, sans-serif", background: themeColors.appBackground, color: themeColors.textPrimary, transition: "background 0.4s ease, color 0.4s ease" }}>
       <div style={{ maxWidth: 1200, margin: "0 auto" }}>
@@ -1123,9 +1524,15 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ background: themeColors.surfaceSubtle, padding: "6px 10px", borderRadius: 8, fontWeight: 700, color: themeColors.textPrimary }} title="Allowed TV minutes based on practice">TV: {tvMinutes} min</div>
               <button onClick={() => { setShowParent(true); setParentError(""); }} title="Parent controls" style={{ padding: '6px 10px', border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, borderRadius: 8, cursor: 'pointer', fontWeight: 700 }}>Parent</button>
-              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ padding: '6px 12px', borderRadius: 9999, border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, cursor: 'pointer', fontWeight: 700 }} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
-                {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
-              </button>
+                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} style={{ padding: '6px 12px', borderRadius: 9999, border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, cursor: 'pointer', fontWeight: 700 }} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+                  {theme === 'dark' ? '☀️ Light' : '🌙 Dark'}
+                </button>
+                {/* Active set quick toggle (compact icon in header) */}
+                {mode === 'english' && (
+                  <button onClick={() => setDrawerOpen(s => !s)} title={drawerOpen ? 'Hide active set' : 'Show active set'} style={{ marginLeft: 8, width: 44, height: 36, borderRadius: 10, border: `1px solid ${themeColors.border}`, background: themeColors.control, color: themeColors.textPrimary, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    📚
+                  </button>
+                )}
             </div>
           </div>
           {mode === 'kannada' ? (
@@ -1133,7 +1540,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
           ) : mode === 'math' ? (
             <div style={{ color: themeColors.textMuted }}>Math practice</div>
           ) : (
-            <div style={{ color: themeColors.textMuted }}>Word {engIndex + 1} / {engDeck.length}</div>
+            <div style={{ color: themeColors.textMuted }}>English practice</div>
           )}
         </div>
 
@@ -1170,22 +1577,88 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
               <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
             </div>
           </div>
-          ) : (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div>
-              <div style={{ fontSize: 32, color: themeColors.textPrimary, fontWeight: 700 }}>Read the word</div>
-              <div style={{ fontSize: 60, fontWeight: 900, letterSpacing: 1 }}>{engWord}</div>
-            </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 13, color: themeColors.textMuted }}>Tap if read or not</div>
-              <div style={{ marginTop: 8, fontWeight: 800, fontSize: 16, display: 'inline-block', padding: '6px 12px', borderRadius: 999, background: timerBadgeStyle.background, color: timerBadgeStyle.color }}>⏱ {timeLeft}s</div>
-            </div>
-          </div>
+              ) : (
+                // ENGLISH SIMPLIFIED PRACTICE UI
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 18, marginBottom: 8 }}>
+                  <div style={{ fontSize: 20, color: themeColors.textMuted, fontWeight: 700 }}>Read the word</div>
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 260 }}>
+                    {/* Prominent single-word display with progressive color fill */}
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', maxWidth: windowWidth > 1400 ? '1200px' : '100%', padding: '18px 12px' }}>
+                      <div aria-live="polite" style={{ position: 'relative', display: 'inline-block', lineHeight: 1 }}>
+                          {(() => {
+                          const w = engWord || '';
+                          const wp = (masteryData && masteryData[w]) ? masteryData[w] : { streak: 0, attempts: 0 };
+                          const streak = Math.max(0, Math.min(MASTERY_STREAK_REQUIRED || 5, wp.streak || 0));
+                          const pct = Math.round((streak / (MASTERY_STREAK_REQUIRED || 5)) * 100);
+                          const baseStyle = { display: 'inline-block', fontSize: 'clamp(48px, 10vw, 140px)', fontWeight: 900, letterSpacing: 1, padding: '6px 8px', lineHeight: 1 };
+                          const isMastered = streak >= (MASTERY_STREAK_REQUIRED || 5);
+                          return (
+                            <div className="rainbow-text" style={{ position: 'relative', display: 'inline-block', textAlign: 'center' }}>
+                              <div className="rainbow-base large-word" style={{ ...baseStyle, color: themeColors.textMuted }}>{w}</div>
+                              <div className={`rainbow-overlay ${celebrate ? 'rainbow-locked rainbow-glow' : ''}`} style={{ width: `${pct}%` }} aria-hidden>
+                                <div className="rainbow-gradient large-word" style={{ ...baseStyle }}>{w}</div>
+                              </div>
+                              <div className={`sparkle ${celebrate ? 'visible' : ''}`} aria-hidden>
+                                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2l1.8 4.6L18.8 8l-4 2.8L13.6 16 12 13l-1.6 3-1.2-5.2L5 8l4.2-1.4L12 2z" fill="#fff" opacity="0.9"/></svg>
+                              </div>
+                              {celebrate && (
+                                <>
+                                  <div className="confetti" aria-hidden>
+                                    {['#ff6b6b','#ffd166','#8ce99a','#74c0fc','#b197fc','#ffb4c6'].map((c, i) => {
+                                      const left = 8 + i * 12 + (i % 2 === 0 ? 0 : 6);
+                                      const delay = i * 80;
+                                      const style = { left: `${left}%`, top: '-10vh', background: c, animationDelay: `${delay}ms, ${delay + 60}ms`, transform: `translateX(${(i % 2 === 0 ? -6 : 6)}px)` };
+                                      return <div key={`cf-${i}`} className="confetti-item" style={style} />;
+                                    })}
+                                  </div>
+                                  {isMastered && (
+                                    <>
+                                      <div className="word-sparkle" style={{ right: '-6px', top: '-12px', background: '#fff9c4' }} />
+                                      <div className="word-sparkle" style={{ left: '6px', top: '-18px', background: '#ffe1ff', animationDelay: '120ms' }} />
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      {/* Bottom mirrored mini-tiles showing active set progress (always visible) */}
+                      <div style={{ marginTop: 18 }}>
+                        <div className="mini-tiles" role="list" aria-label="Active set progress">
+                          {(() => {
+                            // Prefer explicit activeSet words; otherwise use rightPanelWords or fall back to ENGLISH_WORDS
+                            const sourceWords = (activeSet && Array.isArray(activeSet.words) && activeSet.words.length)
+                              ? activeSet.words
+                              : (rightPanelWords && rightPanelWords.length ? rightPanelWords.map(r => r.word) : ENGLISH_WORDS.slice(0, ACTIVE_SET_SIZE));
+                            return sourceWords.slice(0, ACTIVE_SET_SIZE).map((w) => {
+                              const pct = Math.round(((masteryData[w]?.streak || 0) / (MASTERY_STREAK_REQUIRED || 5)) * 100);
+                              return (
+                                <div key={w} className="mini-tile" role="listitem" onClick={() => { setCurrentWord(w); setResult(null); }} title={`Practice ${w}`}>
+                                  <div className="mini-fill" style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #ff4d4d 0%, #ff8a3d 20%, #ffd24d 40%, #4dd08a 60%, #5db3ff 80%, #b98bff 100%)' }} aria-hidden></div>
+                                  <div className="mini-label">{w}</div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action buttons: centered and larger, immediately under the word */}
+                    <div style={{ marginTop: 18, width: '100%', display: 'flex', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: 18, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }}>
+                        <button type="button" onClick={() => { markEnglish(true); playBeep(1568, 0.16); nextEnglish(); }} style={{ padding: '18px 34px', background: '#10b981', color: 'white', border: 'none', borderRadius: 16, cursor: 'pointer', fontWeight: 900, fontSize: 22, boxShadow: '0 12px 30px rgba(16,185,129,0.14)' }} onMouseDown={(e)=>e.currentTarget.style.transform='translateY(2px)'} onMouseUp={(e)=>e.currentTarget.style.transform='translateY(0)'} onMouseLeave={(e)=>e.currentTarget.style.transform='translateY(0)'}>She read it</button>
+                        <button type="button" onClick={() => { markEnglish(false); playBeep(330, 0.18); nextEnglish(); }} style={{ padding: '18px 34px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 16, cursor: 'pointer', fontWeight: 900, fontSize: 22, boxShadow: '0 12px 30px rgba(239,68,68,0.12)' }} onMouseDown={(e)=>e.currentTarget.style.transform='translateY(2px)'} onMouseUp={(e)=>e.currentTarget.style.transform='translateY(0)'} onMouseLeave={(e)=>e.currentTarget.style.transform='translateY(0)'}>Couldn't read</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
           )}
 
           <div>
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 320px", gap: 18, alignItems: 'start' }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'block', gap: 18, alignItems: 'start' }}>
+              <div style={{ width: '100%' }}>
 
               {mode === 'kannada' ? (
                 <KannadaRound
@@ -1241,86 +1714,37 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                 </>
               ) : (
                 <>
-                  <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-                    <button type="button" onClick={() => markEnglish(true)} style={{ padding: '14px 24px', background: '#dcfce7', color: '#166534', border: '2px solid #bbf7d0', borderRadius: 14, cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>She read it</button>
-                    <button type="button" onClick={() => markEnglish(false)} style={{ padding: '14px 24px', background: '#fee2e2', color: '#7f1d1d', border: '2px solid #fecaca', borderRadius: 14, cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>Couldn't read</button>
-                    {result && (
-                      <>
-                      {result === 'correct' && <div style={{ color: '#166534', fontWeight: 800, fontSize: 20 }}>✅ Great!</div>}
-                      {result === 'incorrect' && <div style={{ color: '#b91c1c', fontWeight: 800, fontSize: 20 }}>{timedOut ? '⏰ Time up — try again' : '❌ Keep practicing'}</div>}
-                      </>
+                  {/* Progress indicators removed per UX request to simplify English practice UI */}
+
+                  {/* (removed inline word progress strip for a cleaner UI) */}
+
+                  {/* Main practice screen — primary actions and progress indicators are intentionally minimal. Legend and detailed status live in the Active Set drawer. */}
+
+                  {/* Bottom active-set / weak-words strip removed to keep learner focus on the central word */}
+
+                  {/* Control buttons */}
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                    {undoState && Date.now() - undoState.timestamp <= UNDO_TIMEOUT_MS && (
+                      <button type="button" onClick={undoLastTap} style={{ padding: '8px 16px', background: '#fbbf24', color: '#92400e', border: '1px solid #d97706', borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14 }}>
+                        Undo last tap ({Math.ceil((UNDO_TIMEOUT_MS - (Date.now() - undoState.timestamp)) / 1000)}s)
+                      </button>
                     )}
-                    {result && <button type="button" onClick={nextEnglish} style={{ padding: '14px 26px', background: '#bfdbfe', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 800, fontSize: 20 }}>Next</button>}
                   </div>
                 </>
               )}
               </div>
 
-              {/* Right panel */}
-              <aside style={{ width: 320, position: 'sticky', top: 12 }}>
-              <div style={{ padding: 14, borderRadius: 12, background: themeColors.surface, boxShadow: themeColors.softShadow, border: `1px solid ${themeColors.softBorder}`, transition: "background 0.3s ease" }}>
-                {mode === 'kannada' ? (
-                  <>
-                  <h3 style={{ marginTop: 0 }}>Practice buddies ({directionMeta.targetLabel})</h3>
-                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>These {directionMeta.targetLabel.toLowerCase()} characters are learning with you, {profile}! Keep going.</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {activeWeakGlyphs.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>Keep playing! We’ll track tricky letters for you.</div>}
-                    {activeWeakGlyphs.map((w) => {
-                      const counterpart = counterpartForGlyph(w.glyph);
-                      const roman = direction !== 'kn-to-hi' ? romanForAny(w.glyph) : '';
-                      return (
-                        <div key={`${direction}-${w.glyph}`} style={{ padding: 12, borderRadius: 12, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, lineHeight: 1 }}>
-                            <div style={{ fontSize: 32, fontWeight: 800 }}>{w.glyph}</div>
-                            {counterpart && <div style={{ fontSize: 18, fontWeight: 700 }}>{counterpart}</div>}
-                            {roman && <div style={{ fontSize: 12, fontWeight: 700, color: themeColors.textMuted }}>{roman}</div>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  </>
-                ) : mode === 'math' ? (
-                  <>
-                  <h3 style={{ marginTop: 0 }}>Weak math facts</h3>
-                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>Lowest accuracy for {profile}</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakFacts.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>No stats yet — answer a few questions.</div>}
-                    {weakFacts.map((w) => (
-                      <div key={w.fact} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                        <div style={{ fontSize: 20 }}>{w.fact}</div>
-                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                        <div style={{ fontSize: 11, color: themeColors.textMuted }}>{w.correct}/{w.attempts}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  </>
-                ) : (
-                  <>
-                  <h3 style={{ marginTop: 0 }}>Weak words</h3>
-                  <div style={{ fontSize: 13, color: themeColors.textMuted, marginBottom: 10 }}>Lowest accuracy for {profile}</div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                    {weakEnglish.length === 0 && <div style={{ gridColumn: "1 / -1", color: themeColors.textMuted }}>No stats yet — practice a few words.</div>}
-                    {weakEnglish.map((w) => (
-                      <div key={w.word} style={{ padding: 8, borderRadius: 8, background: glyphColorFor(w.accuracy, theme), textAlign: "center" }} title={`${w.correct}/${w.attempts}`}>
-                        <div style={{ fontSize: 16, fontWeight: 700 }}>{w.word}</div>
-                        <div style={{ fontSize: 12, fontWeight: 800 }}>{Math.round((w.accuracy || 0) * 100)}%</div>
-                        <div style={{ fontSize: 11, color: themeColors.textMuted }}>{w.correct}/{w.attempts}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  </>
-                )}
-              </div>
-              </aside>
+              {/* Right panel removed — reclaimed space for larger responsive grid */}
 
             </div>
+            {/* right-side drawer removed - active set is now inline below the word */}
             </div>
         </div>
       </div>
+    </div>
+    {/* Persistent small footer for learner goal (non-intrusive) */}
+    <div style={{ position: 'fixed', left: 0, right: 0, bottom: 8, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+      <div style={{ pointerEvents: 'auto', background: themeColors.surfaceSubtle, padding: '6px 12px', borderRadius: 999, fontSize: 12, color: themeColors.textMuted, boxShadow: themeColors.softShadow, border: `1px solid ${themeColors.softBorder}` }}>Goal: fully color each word by getting it correct {MASTERY_STREAK_REQUIRED} times</div>
     </div>
 
     {/* Parent award modal */}
@@ -1364,9 +1788,7 @@ function pickNextMath(stats, prevKey = null, opts = {}) {
                   <button type="button" onClick={() => { handleReshuffle(); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Reshuffle Kannada deck</button>
                   <button type="button" onClick={() => { setCardIndex(0); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Go to first Kannada card</button>
                   <button type="button" onClick={() => { localStorage.removeItem(mathStatsKeyFor(profile)); setMathStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s math stats</button>
-                  <button type="button" onClick={() => { localStorage.removeItem(engStatsKeyFor(profile)); setEngStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s English stats</button>
-                  <button type="button" onClick={() => { setEngDeck((d) => shuffleArray(d)); setEngIndex(0); }} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>Shuffle English order</button>
-                  <button type="button" onClick={reshuffleEnglish} style={{ padding: '8px 12px', background: choose('#eef2ff', 'rgba(99,102,241,0.18)'), border: `1px solid ${themeColors.border}`, color: themeColors.textPrimary, borderRadius: 10, cursor: 'pointer', fontWeight: 700 }}>New 200 English sample</button>
+                  <button type="button" onClick={() => { resetAllMasteryProgress(); localStorage.removeItem(engStatsKeyFor(profile)); setEngStats({}); }} style={{ padding: '8px 12px', background: '#fee2e2', color: '#7f1d1d', border: '1px solid #fecaca', borderRadius: 10, cursor: 'pointer', fontWeight: 800 }}>Reset {profile}'s English mastery</button>
                 </div>
               </div>
               <div style={{ fontSize: 12, color: themeColors.textMuted }}>Changes apply to <b>{profile}</b>.</div>
